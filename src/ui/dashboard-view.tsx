@@ -255,6 +255,7 @@ function Overview({ snapshot, controller, run, t }: PanelProps): preact.JSX.Elem
 function VaultPage({ snapshot, controller, run, t }: PanelProps): preact.JSX.Element {
   const binding = snapshot.settings.binding;
   const [name, setName] = useState(binding?.branch ?? "");
+  const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
   useEffect(() => setName(binding?.branch ?? ""), [binding?.branch]);
   if (!binding) return <Empty>{t("notBound")}</Empty>;
   return (
@@ -266,10 +267,20 @@ function VaultPage({ snapshot, controller, run, t }: PanelProps): preact.JSX.Ele
         <Definition label={t("branch")} value={binding.branch} mono />
         <Definition label={t("vaultId")} value={binding.vaultId} mono />
         <div class="cs-actions cs-vault-actions">
-          <button class="cs-button is-danger" disabled={busy(snapshot)} onClick={() => {
-            if (window.confirm(t("disconnectConfirm"))) void run(() => controller.disconnectVault());
-          }}>{t("disconnect")}</button>
+          <button class="cs-button is-danger" disabled={busy(snapshot)} onClick={() => setConfirmingDisconnect(true)}>{t("disconnect")}</button>
         </div>
+        {confirmingDisconnect ? (
+          <div class="cs-alert is-warning cs-confirmation" role="alertdialog" aria-live="polite">
+            <span>{t("disconnectConfirm")}</span>
+            <div class="cs-actions">
+              <button class="cs-button" onClick={() => setConfirmingDisconnect(false)}>{t("cancel")}</button>
+              <button class="cs-button is-danger" disabled={busy(snapshot)} onClick={() => {
+                setConfirmingDisconnect(false);
+                void run(() => controller.disconnectVault());
+              }}>{t("disconnect")}</button>
+            </div>
+          </div>
+        ) : null}
       </section>
       <section class="cs-card">
         <p class="cs-kicker">Shared identity</p>

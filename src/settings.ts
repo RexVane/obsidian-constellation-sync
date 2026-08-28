@@ -1,3 +1,4 @@
+import { Platform } from "obsidian";
 import type { PluginSettings, SyncPolicy } from "./types";
 import { SCHEMA_VERSION } from "./types";
 
@@ -56,6 +57,10 @@ export function loadSettings(raw: unknown): PluginSettings {
 }
 
 function defaultDeviceName(): string {
-  const platform = typeof navigator === "undefined" ? "device" : navigator.platform || "device";
-  return platform.replace(/[^a-zA-Z0-9-]/g, "-").replace(/-+/g, "-").slice(0, 32) || "device";
+  if (Platform.isWin) return "windows";
+  if (Platform.isMacOS) return "macos";
+  if (Platform.isLinux) return "linux";
+  if (Platform.isAndroidApp) return "android";
+  if (Platform.isIosApp) return "ios";
+  return "device";
 }

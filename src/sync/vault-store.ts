@@ -9,6 +9,7 @@ export interface LocalScan {
 }
 
 export interface VaultStore {
+  configDir(): string;
   scan(policy: SyncPolicy): Promise<LocalScan>;
   read(path: string): Promise<Uint8Array>;
   write(path: string, bytes: Uint8Array): Promise<void>;
@@ -19,19 +20,24 @@ export interface VaultStore {
 export class ObsidianVaultStore implements VaultStore {
   constructor(private readonly app: App) {}
 
+  configDir(): string {
+    return this.app.vault.configDir;
+  }
+
   async scan(policy: SyncPolicy): Promise<LocalScan> {
+    const configDir = this.configDir();
     const paths = new Set(
       this.app.vault
         .getFiles()
         .map((file) => file.path)
-        .filter((path) => shouldSyncPath(path, policy))
+        .filter((path) => shouldSyncPath(path, policy, configDir))
     );
     if (
       policy.obsidian.coreSettings ||
       policy.obsidian.themesAndSnippets ||
       policy.obsidian.communityPluginData.length > 0
     ) {
-      await this.collectAdapterFiles(".obsidian", paths, policy);
+      await this.collectAdapterFiles(configDir, paths, policy);
     }
 
     const blockedPaths: string[] = [];
@@ -62,7 +68,7 @@ export class ObsidianVaultStore implements VaultStore {
     const file = this.app.vault.getAbstractFileByPath(normalized);
     if (file instanceof TFile) {
       await this.app.vault.modifyBinary(file, buffer);
-    } else if (normalized.startsWith(".obsidian/")) {
+    } else if (normalized === this.configDir() || normalized.startsWith(`${this.configDir()}/`)) {
       await this.app.vault.adapter.writeBinary(normalized, buffer);
     } else {
       await this.app.vault.createBinary(normalized, buffer);
@@ -87,7 +93,7 @@ export class ObsidianVaultStore implements VaultStore {
     if (!(await this.app.vault.adapter.exists(directory))) return;
     const listing = await this.app.vault.adapter.list(directory);
     for (const file of listing.files) {
-      if (shouldSyncPath(file, policy)) output.add(file);
+      if (shouldSyncPath(file, policy, this.configDir())) output.add(file);
     }
     for (const folder of listing.folders) await this.collectAdapterFiles(folder, output, policy);
   }

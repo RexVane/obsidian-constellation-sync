@@ -90,7 +90,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   override onunload(): void {
     this.loginAbort?.abort();
     if (this.localTimer !== null) window.clearTimeout(this.localTimer);
-    this.app.workspace.detachLeavesOfType(DASHBOARD_VIEW_TYPE);
   }
 
   snapshot(): DashboardSnapshot {
@@ -393,7 +392,9 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     const binding = this.requireBinding();
     if (this.settings.pendingReview) throw new Error("Complete or cancel the pending sync before restoring a file.");
     const normalized = normalizeRepoPath(path);
-    if (!shouldSyncPath(normalized, this.settings.policy)) throw new Error("That path is outside the enabled sync policy.");
+    if (!shouldSyncPath(normalized, this.settings.policy, this.app.vault.configDir)) {
+      throw new Error("That path is outside the enabled sync policy.");
+    }
     const bytes = await this.github.getFileAtCommit(binding.repository, normalized, commitOid);
     await new ObsidianVaultStore(this.app).write(normalized, bytes);
     this.addActivity("restore", `Restored ${normalized} from ${commitOid.slice(0, 8)}`);

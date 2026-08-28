@@ -3,9 +3,6 @@ import type { SyncPolicy } from "../types";
 const ALWAYS_EXCLUDED = [
   ".git/**",
   ".trash/**",
-  ".obsidian/cache/**",
-  ".obsidian/workspace*.json",
-  ".obsidian/plugins/constellation-sync/**",
   "**/.DS_Store",
   "**/Thumbs.db"
 ];
@@ -21,21 +18,30 @@ export function normalizeRepoPath(input: string): string {
   return path;
 }
 
-export function isAlwaysExcluded(path: string): boolean {
+export function isAlwaysExcluded(path: string, configDir: string): boolean {
   const normalized = path.replace(/\\/g, "/");
-  return ALWAYS_EXCLUDED.some((pattern) => globToRegExp(pattern).test(normalized));
+  const configRoot = normalizeConfigDir(configDir);
+  const configPatterns = [
+    `${configRoot}/cache/**`,
+    `${configRoot}/workspace*.json`,
+    `${configRoot}/plugins/constellation-sync/**`
+  ];
+  return [...ALWAYS_EXCLUDED, ...configPatterns].some((pattern) => globToRegExp(pattern).test(normalized));
 }
 
-export function shouldSyncPath(path: string, policy: SyncPolicy): boolean {
+export function shouldSyncPath(path: string, policy: SyncPolicy, configDir: string): boolean {
   const normalized = normalizeRepoPath(path);
-  if (isAlwaysExcluded(normalized)) return false;
+  const configRoot = normalizeConfigDir(configDir);
+  if (isAlwaysExcluded(normalized, configRoot)) return false;
 
-  if (normalized.startsWith(".obsidian/")) {
-    if (isCoreSetting(normalized) && !policy.obsidian.coreSettings) return false;
-    if (isThemeOrSnippet(normalized) && !policy.obsidian.themesAndSnippets) return false;
-    const pluginId = communityPluginId(normalized);
+  const configPrefix = `${configRoot}/`;
+  if (normalized.startsWith(configPrefix)) {
+    const relative = normalized.slice(configPrefix.length);
+    if (isCoreSetting(relative) && !policy.obsidian.coreSettings) return false;
+    if (isThemeOrSnippet(relative) && !policy.obsidian.themesAndSnippets) return false;
+    const pluginId = communityPluginId(relative);
     if (pluginId && !policy.obsidian.communityPluginData.includes(pluginId)) return false;
-    if (!isCoreSetting(normalized) && !isThemeOrSnippet(normalized) && !pluginId) return false;
+    if (!isCoreSetting(relative) && !isThemeOrSnippet(relative) && !pluginId) return false;
   }
 
   let included = true;
@@ -46,7 +52,7 @@ export function shouldSyncPath(path: string, policy: SyncPolicy): boolean {
     const pattern = negate ? trimmed.slice(1) : trimmed;
     if (pattern && globToRegExp(pattern).test(normalized)) included = negate;
   }
-  return included && !isAlwaysExcluded(normalized);
+  return included && !isAlwaysExcluded(normalized, configRoot);
 }
 
 export function validatePortablePath(path: string): string[] {
@@ -96,14 +102,22 @@ export function globToRegExp(pattern: string): RegExp {
 }
 
 function isCoreSetting(path: string): boolean {
-  return /^\.obsidian\/(app|appearance|hotkeys|core-plugins(?:-migration)?|types|graph)\.json$/.test(path);
+  return /^(app|appearance|hotkeys|core-plugins(?:-migration)?|types|graph)\.json$/.test(path);
 }
 
 function isThemeOrSnippet(path: string): boolean {
-  return /^\.obsidian\/(themes|snippets)\//.test(path);
+  return /^(themes|snippets)\//.test(path);
 }
 
 function communityPluginId(path: string): string | null {
-  const match = /^\.obsidian\/plugins\/([^/]+)\/(?:data\.json|.+\.(?:json|db))$/.exec(path);
+  const match = /^plugins\/([^/]+)\/(?:data\.json|.+\.(?:json|db))$/.exec(path);
   return match?.[1] ?? null;
+}
+
+function normalizeConfigDir(input: string): string {
+  const normalized = input.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  if (!normalized || normalized.split("/").some((part) => part === ".." || part === "." || part === "")) {
+    throw new Error(`Unsafe Obsidian config directory: ${input}`);
+  }
+  return normalized;
 }

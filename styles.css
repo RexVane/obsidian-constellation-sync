@@ -390,6 +390,7 @@
 .cs-alert.is-error { color: color-mix(in srgb, var(--cs-danger) 80%, var(--cs-text)); border-color: color-mix(in srgb, var(--cs-danger) 35%, var(--cs-border)); background: color-mix(in srgb, var(--cs-danger) 7%, var(--cs-panel)); }
 .cs-alert.is-warning { color: color-mix(in srgb, var(--cs-orange) 82%, var(--cs-text)); border-color: color-mix(in srgb, var(--cs-orange) 35%, var(--cs-border)); background: color-mix(in srgb, var(--cs-orange) 7%, var(--cs-panel)); }
 .cs-alert.is-info { color: color-mix(in srgb, var(--cs-cyan) 72%, var(--cs-text)); border-color: color-mix(in srgb, var(--cs-cyan) 25%, var(--cs-border)); }
+.cs-confirmation { flex-direction: column; }
 
 .cs-device-flow {
   display: flex;
@@ -644,10 +645,10 @@
   .constellation-sync *,
   .constellation-sync *::before,
   .constellation-sync *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
+    scroll-behavior: auto;
+    animation-duration: 0.001ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.001ms;
   }
 }
 

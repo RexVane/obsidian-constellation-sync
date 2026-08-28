@@ -73,8 +73,9 @@ export class SyncEngine {
       this.vault.scan(policy),
       this.github.getSnapshot(binding.repository, binding.branch)
     ]);
-    const filteredBase = filterManifest(base, policy);
-    const filteredRemote = filterManifest(remote.manifest, policy);
+    const configDir = this.vault.configDir();
+    const filteredBase = filterManifest(base, policy, configDir);
+    const filteredRemote = filterManifest(remote.manifest, policy, configDir);
     return buildSyncPlan({
       ...(binding.baseCommitOid ? { baseCommitOid: binding.baseCommitOid } : {}),
       remoteHeadOid: remote.headOid,
@@ -129,7 +130,7 @@ export class SyncEngine {
         plan,
         commitOid
       },
-      manifest: filterManifest(refreshed.manifest, policy),
+      manifest: filterManifest(refreshed.manifest, policy, this.vault.configDir()),
       baseCommitOid: refreshed.headOid,
       conflicts
     };
@@ -312,8 +313,8 @@ export class SyncEngine {
   }
 }
 
-function filterManifest(manifest: SnapshotManifest, policy: SyncPolicy): SnapshotManifest {
-  return Object.fromEntries(Object.entries(manifest).filter(([path]) => shouldSyncPath(path, policy)));
+function filterManifest(manifest: SnapshotManifest, policy: SyncPolicy, configDir: string): SnapshotManifest {
+  return Object.fromEntries(Object.entries(manifest).filter(([path]) => shouldSyncPath(path, policy, configDir)));
 }
 
 function conflictRecord(path: string, reason: ConflictRecord["reason"], conflictPath?: string): ConflictRecord {

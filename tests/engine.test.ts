@@ -9,6 +9,10 @@ import { gitBlobOid } from "../src/utils/hash";
 class MemoryVault implements VaultStore {
   constructor(readonly files = new Map<string, Uint8Array>()) {}
 
+  configDir(): string {
+    return ".obsidian";
+  }
+
   async scan(): Promise<LocalScan> {
     const manifest: SnapshotManifest = {};
     for (const [path, bytes] of this.files) manifest[path] = { path, oid: await gitBlobOid(bytes), size: bytes.length };

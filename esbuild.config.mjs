@@ -5,6 +5,14 @@ import process from "node:process";
 loadLocalEnv();
 
 const production = process.argv[2] === "production";
+// OAuth Client IDs and App slugs are public metadata. Keeping the project's
+// release defaults here makes a clean source checkout reproducible while still
+// allowing developers to override them with their own App through .env.local.
+const releaseDefaults = {
+  clientId: "Iv23liP1SGkZ70ToT0ng",
+  appSlug: "constellation-sync",
+  installUrl: "https://github.com/apps/constellation-sync/installations/new"
+};
 const context = await esbuild.context({
   entryPoints: ["src/main.ts"],
   bundle: true,
@@ -31,9 +39,9 @@ const context = await esbuild.context({
   minify: production,
   outfile: "main.js",
   define: {
-    __GITHUB_CLIENT_ID__: JSON.stringify(process.env.CONSTELLATION_GITHUB_CLIENT_ID ?? ""),
-    __GITHUB_APP_SLUG__: JSON.stringify(process.env.CONSTELLATION_GITHUB_APP_SLUG ?? "constellation-sync"),
-    __GITHUB_INSTALL_URL__: JSON.stringify(process.env.CONSTELLATION_GITHUB_INSTALL_URL ?? "")
+    __GITHUB_CLIENT_ID__: JSON.stringify(process.env.CONSTELLATION_GITHUB_CLIENT_ID ?? releaseDefaults.clientId),
+    __GITHUB_APP_SLUG__: JSON.stringify(process.env.CONSTELLATION_GITHUB_APP_SLUG ?? releaseDefaults.appSlug),
+    __GITHUB_INSTALL_URL__: JSON.stringify(process.env.CONSTELLATION_GITHUB_INSTALL_URL ?? releaseDefaults.installUrl)
   }
 });
 
