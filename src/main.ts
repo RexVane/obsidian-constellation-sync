@@ -1,8 +1,8 @@
 import { Notice, Plugin } from "obsidian";
 import { GitHubAuth, GitHubAuthError, type SecretStore } from "./auth/github-auth";
 import type { DashboardController, DashboardSnapshot } from "./controller";
-import { GitHubApiError, GitHubClient } from "./github/github-client";
-import { createDefaultSettings, loadSettings } from "./settings";
+import { GitHubApiError, GitHubClient, isStaleHeadError } from "./github/github-client";
+import { createDefaultSettings, loadSettings, shouldAdoptRemotePolicy } from "./settings";
 import { SyncChangedDuringRunError, SyncEngine, SyncReviewRequiredError } from "./sync/engine";
 import { ObsidianVaultStore } from "./sync/vault-store";
 import {
@@ -15,6 +15,7 @@ import {
   type RepositoryRef,
   type RuntimeStatus,
   type SyncApproval,
+  type SyncPolicy,
   type VaultMetadata
 } from "./types";
 import { branchFromEnglishName, slugifyEnglishName, validateBranchName } from "./utils/branch";
@@ -231,6 +232,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
         repository,
         vaultId: existing.vaultId,
         branch,
+        policyRevision: existing.policyRevision,
         boundAt: new Date().toISOString()
       };
       this.settings.policy = structuredClone(existing.syncPolicy);
@@ -245,6 +247,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       repository,
       vaultId: metadata.vaultId,
       branch,
+      policyRevision: metadata.policyRevision,
       boundAt: now
     };
     this.settings.baseManifest = {};
@@ -267,6 +270,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       repository,
       vaultId: canonical.metadata.vaultId,
       branch: canonical.branch.name,
+      policyRevision: canonical.metadata.policyRevision,
       boundAt: new Date().toISOString()
     };
     this.settings.policy = structuredClone(canonical.metadata.syncPolicy);
@@ -433,24 +437,28 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   async updateObsidianPolicy(key: "coreSettings" | "themesAndSnippets", value: boolean): Promise<void> {
-    return this.enqueueOperation(async () => {
-      this.settings.policy.obsidian[key] = value;
-      await this.persistSharedPolicy();
+    return this.enqueueOperation(() => {
+      const next = structuredClone(this.settings.policy);
+      next.obsidian[key] = value;
+      return this.persistSharedPolicy(next);
     });
   }
 
   async updateIgnorePatterns(value: string): Promise<void> {
-    return this.enqueueOperation(async () => {
-      this.settings.policy.ignorePatterns = value.split(/\r?\n/).map((line) => line.trimEnd());
-      await this.persistSharedPolicy();
+    return this.enqueueOperation(() => {
+      const next = structuredClone(this.settings.policy);
+      next.ignorePatterns = value.split(/\r?\n/).map((line) => line.trimEnd());
+      return this.persistSharedPolicy(next);
     });
   }
 
   async updateCommunityPluginData(pluginIds: string[]): Promise<void> {
-    return this.enqueueOperation(async () => {
-      const unique = [...new Set(pluginIds.map((id) => id.trim()).filter((id) => id.length > 0))].sort();
-      this.settings.policy.obsidian.communityPluginData = unique;
-      await this.persistSharedPolicy();
+    return this.enqueueOperation(() => {
+      const next = structuredClone(this.settings.policy);
+      next.obsidian.communityPluginData = [
+        ...new Set(pluginIds.map((id) => id.trim()).filter((id) => id.length > 0))
+      ].sort();
+      return this.persistSharedPolicy(next);
     });
   }
 
@@ -638,34 +646,69 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
 
     const metadata = await this.github.getVaultMetadata(binding.repository, branch);
     if (!metadata || metadata.vaultId !== binding.vaultId) throw new Error("The remote vault marker does not match this local binding.");
-    this.settings.policy = structuredClone(metadata.syncPolicy);
+    // A contents read can lag behind a policy commit this device just made. Only
+    // a revision at least as high as the one already accepted is authoritative;
+    // anything lower is a stale replica and must not roll the policy back.
+    if (shouldAdoptRemotePolicy(metadata.policyRevision, binding.policyRevision)) {
+      this.settings.policy = structuredClone(metadata.syncPolicy);
+      binding.policyRevision = metadata.policyRevision;
+    }
     if (metadata.englishName !== branch) {
-      metadata.englishName = branch;
-      metadata.updatedAt = new Date().toISOString();
-      const head = await this.github.getBranchHead(binding.repository, branch);
-      binding.baseCommitOid = await this.github.updateVaultMetadata(binding.repository, branch, head, metadata);
+      const repaired = await this.commitVaultMetadata(binding, (current) => {
+        current.englishName = branch;
+        current.updatedAt = new Date().toISOString();
+      });
+      binding.baseCommitOid = repaired.commitOid;
       this.addActivity("rename", `Repaired vault metadata for ${branch}`, binding.baseCommitOid);
     }
     await this.saveSettings();
     return binding;
   }
 
-  private async persistSharedPolicy(): Promise<void> {
+  private async persistSharedPolicy(next: SyncPolicy): Promise<void> {
     const binding = this.settings.binding;
     if (!binding) {
+      this.settings.policy = next;
       await this.saveSettings();
       return;
     }
     if (this.settings.pendingReview) throw new Error("Complete or cancel the pending sync before changing shared policy.");
-    const metadata = await this.github.getVaultMetadata(binding.repository, binding.branch);
-    if (!metadata || metadata.vaultId !== binding.vaultId) throw new Error("Remote vault metadata could not be verified.");
-    const head = await this.github.getBranchHead(binding.repository, binding.branch);
-    metadata.syncPolicy = structuredClone(this.settings.policy);
-    metadata.policyRevision += 1;
-    metadata.updatedAt = new Date().toISOString();
-    binding.baseCommitOid = await this.github.updateVaultMetadata(binding.repository, binding.branch, head, metadata);
+    // The shared marker is the source of truth, so it lands first. Adopting the
+    // change locally before the commit succeeds would leave this device holding
+    // a policy that neither disk nor the remote agrees with.
+    const written = await this.commitVaultMetadata(binding, (metadata) => {
+      metadata.syncPolicy = structuredClone(next);
+      metadata.policyRevision += 1;
+      metadata.updatedAt = new Date().toISOString();
+    });
+    binding.baseCommitOid = written.commitOid;
+    binding.policyRevision = written.metadata.policyRevision;
+    this.settings.policy = next;
     await this.saveSettings();
     this.scheduleLocalSync();
+  }
+
+  /**
+   * Rewrites the shared vault marker. GitHub can report a stale head right after
+   * a write, so a rejected commit is re-read and replayed rather than surfaced.
+   */
+  private async commitVaultMetadata(
+    binding: NonNullable<PluginSettings["binding"]>,
+    mutate: (metadata: VaultMetadata) => void
+  ): Promise<{ commitOid: string; metadata: VaultMetadata }> {
+    for (let attempt = 0; ; attempt += 1) {
+      const metadata = await this.github.getVaultMetadata(binding.repository, binding.branch);
+      if (!metadata || metadata.vaultId !== binding.vaultId) throw new Error("Remote vault metadata could not be verified.");
+      const head = await this.github.getBranchHeadForCommit(binding.repository, binding.branch);
+      mutate(metadata);
+      try {
+        const commitOid = await this.github.updateVaultMetadata(binding.repository, binding.branch, head, metadata);
+        return { commitOid, metadata };
+      } catch (error) {
+        if (attempt >= 3 || !isStaleHeadError(error)) throw error;
+        await sleep(400 * 2 ** attempt);
+      }
+    }
   }
 
   private async verifyBinding(): Promise<void> {
@@ -780,6 +823,10 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   private emit(): void {
     for (const listener of this.listeners) listener();
   }
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function isReferenceAlreadyExistsError(error: unknown): error is GitHubApiError {

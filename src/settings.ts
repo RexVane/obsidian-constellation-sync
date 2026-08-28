@@ -11,6 +11,16 @@ export const DEFAULT_POLICY: SyncPolicy = {
   ignorePatterns: []
 };
 
+/**
+ * Whether a remote policy read should replace the local one. `policyRevision`
+ * only ever increases, so a read reporting less than what this device already
+ * accepted came from a replica that has not caught up, and adopting it would
+ * roll a just-made change back.
+ */
+export function shouldAdoptRemotePolicy(remoteRevision: number, acceptedRevision: number | undefined): boolean {
+  return remoteRevision >= (acceptedRevision ?? 0);
+}
+
 export function createDefaultSettings(): PluginSettings {
   return {
     schemaVersion: SCHEMA_VERSION,

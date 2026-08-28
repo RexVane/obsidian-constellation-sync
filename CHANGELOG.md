@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.8 — Reliable shared policy changes
+
+- Resolve the head for a commit through GraphQL. The REST ref endpoint is served from a replica and can still report the previous commit moments after a write, while `createCommitOnBranch` is strongly consistent, so a policy change made shortly after a sync failed with `Expected branch to point to ... but it did not`.
+- Replay a metadata write that GitHub rejects because the branch moved, instead of surfacing the rejection.
+- Commit the shared marker before adopting a policy change locally. A failed write used to leave the device holding a policy that neither disk nor the remote agreed with.
+- Ignore a remote policy whose `policyRevision` is lower than the one already accepted. A lagging read could otherwise roll back a setting seconds after it was changed.
+
 ## 0.1.7 — Popout window timer compatibility
 
 - Schedule the device-flow poll and the request backoff through `window.setTimeout` and `window.clearTimeout` again. A popout window has its own timer scope, so the bare globals introduced in 0.1.5 resolve against the wrong window.

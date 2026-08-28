@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RequestUrlParam, RequestUrlResponse } from "obsidian";
 import type { GitHubAuth } from "../src/auth/github-auth";
-import { GitHubClient, selectCanonicalVaults } from "../src/github/github-client";
+import { GitHubClient, isStaleHeadError, selectCanonicalVaults } from "../src/github/github-client";
 import type { RemoteVaultSummary, RepositoryRef, VaultMetadata } from "../src/types";
 
 const repository: RepositoryRef = { id: 10, nodeId: "node", owner: "owner", name: "notes", fullName: "owner/notes", private: true, defaultBranch: "main" };
@@ -90,6 +90,34 @@ describe("GitHub client request contracts", () => {
       Promise.resolve(response({ message: "Bad credentials" }, 401))
     );
     await expect(client.getVaultMetadata(repository, "work-notes")).rejects.toThrow(/Bad credentials/);
+  });
+
+  it("resolves the head for a commit through GraphQL, not the lagging REST ref", async () => {
+    const requests: RequestUrlParam[] = [];
+    const client = new GitHubClient({ getValidAccessToken: () => Promise.resolve("token") } as GitHubAuth, (request) => {
+      requests.push(request);
+      return Promise.resolve(response({ data: { repository: { ref: { target: { oid: "graphql-head" } } } } }));
+    });
+
+    await expect(client.getBranchHeadForCommit(repository, "work-notes")).resolves.toBe("graphql-head");
+    expect(requests[0]?.url).toBe("https://api.github.com/graphql");
+    expect(parseBody(requests[0])).toMatchObject({ variables: { qualifiedName: "refs/heads/work-notes" } });
+  });
+
+  it("recognizes the moved-branch rejection so a metadata write can be replayed", async () => {
+    const client = new GitHubClient({ getValidAccessToken: () => Promise.resolve("token") } as GitHubAuth, () =>
+      Promise.resolve(
+        response({ errors: [{ message: 'Expected branch to point to "abc123" but it did not. Pull and try again.' }] })
+      )
+    );
+
+    const failure = await client
+      .createCommitOnBranch(repository, "work-notes", "abc123", "message", { additions: [], deletions: [] })
+      .then(() => null, (error: unknown) => error);
+
+    expect(isStaleHeadError(failure)).toBe(true);
+    // A different failure must not be mistaken for a stale head.
+    expect(isStaleHeadError(new Error("network down"))).toBe(false);
   });
 
   it("bootstraps an empty repository before creating the vault branch", async () => {

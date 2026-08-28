@@ -208,6 +208,23 @@ export class GitHubClient {
     return value;
   }
 
+  // The REST ref endpoint is served from a replica and can still report the
+  // previous commit moments after a write, while createCommitOnBranch is
+  // strongly consistent with the GraphQL view. Reading the head through GraphQL
+  // keeps the expectedHeadOid we send in the same consistency domain as the
+  // mutation that checks it.
+  async getBranchHeadForCommit(repository: RepositoryRef, branch: string): Promise<string> {
+    const query = `query BranchHead($owner: String!, $name: String!, $qualifiedName: String!) {
+      repository(owner: $owner, name: $name) { ref(qualifiedName: $qualifiedName) { target { oid } } }
+    }`;
+    const data = await this.graphql<{
+      repository: { ref: { target: { oid: string } | null } | null } | null;
+    }>(query, { owner: repository.owner, name: repository.name, qualifiedName: `refs/heads/${branch}` });
+    const oid = data.repository?.ref?.target?.oid;
+    if (!oid) throw new GitHubApiError(`Branch ${branch} has no head commit.`, 404, "branch-head-missing");
+    return oid;
+  }
+
   async getBranchHead(repository: RepositoryRef, branch: string): Promise<string> {
     const data = await this.api<{ object: { sha: string } }>(
       `${repoPath(repository)}/git/ref/heads/${encodeURIComponent(branch)}`
@@ -497,6 +514,11 @@ function isPreferredVaultBranch(candidate: RemoteVaultSummary, current: RemoteVa
 
 function repoPath(repository: RepositoryRef): string {
   return `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+}
+
+/** True when GitHub rejected a commit because the branch had already moved. */
+export function isStaleHeadError(error: unknown): boolean {
+  return error instanceof GitHubApiError && /expected branch to point to/i.test(error.message);
 }
 
 function isEmptyRepositoryError(error: unknown): error is GitHubApiError {

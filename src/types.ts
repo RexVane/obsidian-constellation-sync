@@ -54,6 +54,11 @@ export interface RepositoryBinding {
   vaultId: string;
   branch: string;
   baseCommitOid?: string;
+  /**
+   * Highest `policyRevision` this device has accepted. A remote read reporting
+   * a lower revision is a stale replica, not an authoritative change.
+   */
+  policyRevision?: number;
   boundAt: string;
 }
 
