@@ -18,19 +18,9 @@ export type SyncStatusKind =
   | "paused"
   | "error";
 
-export interface GitHubAppConfig {
-  clientId: string;
-  appSlug: string;
-  installUrl: string;
-}
-
 export interface GitHubSession {
   accessToken: string;
-  refreshToken?: string;
-  expiresAt?: number;
-  refreshExpiresAt?: number;
   tokenType: string;
-  scope?: string;
 }
 
 export interface GitHubAccount {
@@ -46,7 +36,6 @@ export interface RepositoryRef {
   fullName: string;
   private: boolean;
   defaultBranch: string;
-  installationId?: number;
 }
 
 export interface RepositoryBinding {
@@ -63,8 +52,6 @@ export interface RepositoryBinding {
 }
 
 export interface ObsidianSyncPolicy {
-  coreSettings: boolean;
-  themesAndSnippets: boolean;
   communityPluginData: string[];
 }
 
@@ -204,22 +191,6 @@ export interface BranchSummary {
 export interface RemoteVaultSummary {
   branch: BranchSummary;
   metadata: VaultMetadata;
-}
-
-export interface CommitSummary {
-  oid: string;
-  message: string;
-  author: string;
-  authoredAt: string;
-  htmlUrl: string;
-}
-
-export interface DeviceCode {
-  deviceCode: string;
-  userCode: string;
-  verificationUri: string;
-  expiresIn: number;
-  interval: number;
 }
 
 export interface SyncResult {

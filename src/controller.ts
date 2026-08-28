@@ -1,6 +1,4 @@
 import type {
-  CommitSummary,
-  DeviceCode,
   LocaleSetting,
   PluginSettings,
   RemoteVaultSummary,
@@ -11,15 +9,11 @@ import type {
 export interface DashboardSnapshot {
   settings: PluginSettings;
   status: RuntimeStatus;
-  githubConfigured: boolean;
-  appInstallUrl: string;
-  deviceCode?: DeviceCode;
   repositories: RepositoryRef[];
   selectedRepository?: RepositoryRef;
   remoteVaults: RemoteVaultSummary[];
   localVaultName: string;
   suggestedBranch?: string;
-  commits: CommitSummary[];
   rateLimit: { remaining: number | null; resetAt: number | null };
 }
 
@@ -27,8 +21,7 @@ export interface DashboardController {
   snapshot(): DashboardSnapshot;
   subscribe(listener: () => void): () => void;
   activateView(): Promise<void>;
-  startLogin(): Promise<void>;
-  cancelLogin(): void;
+  connectWithToken(token: string): Promise<void>;
   openExternal(url: string): void;
   refreshRepositories(): Promise<void>;
   selectRepository(repository: RepositoryRef): Promise<void>;
@@ -39,13 +32,11 @@ export interface DashboardController {
   approvePendingSync(): Promise<void>;
   cancelPendingSync(): Promise<void>;
   resolveConflict(id: string): Promise<void>;
-  loadHistory(page?: number): Promise<void>;
   restoreFile(path: string, commitOid: string): Promise<void>;
   updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale">(
     key: K,
     value: K extends "autoSync" | "paused" ? boolean : K extends "locale" ? LocaleSetting : string
   ): Promise<void>;
-  updateObsidianPolicy(key: "coreSettings" | "themesAndSnippets", value: boolean): Promise<void>;
   updateIgnorePatterns(value: string): Promise<void>;
   updateCommunityPluginData(pluginIds: string[]): Promise<void>;
   disconnectVault(): Promise<void>;

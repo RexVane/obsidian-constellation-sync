@@ -50,11 +50,7 @@ export class ObsidianVaultStore implements VaultStore {
         .filter((path) => !isEmptyDirectoryMarker(path) && shouldSyncPath(path, policy, configDir))
     );
     for (const marker of emptyDirectoryMarkers) paths.add(marker);
-    if (
-      policy.obsidian.coreSettings ||
-      policy.obsidian.themesAndSnippets ||
-      policy.obsidian.communityPluginData.length > 0
-    ) {
+    if (policy.obsidian.communityPluginData.length > 0) {
       await this.collectAdapterFiles(configDir, paths, policy);
     }
 

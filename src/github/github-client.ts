@@ -2,7 +2,6 @@ import { requestUrl, type RequestUrlParam, type RequestUrlResponse } from "obsid
 import type { GitHubAuth } from "../auth/github-auth";
 import type {
   BranchSummary,
-  CommitSummary,
   GitHubAccount,
   RemoteVaultSummary,
   RepositoryRef,
@@ -39,11 +38,6 @@ interface TreeResponse {
   tree: Array<{ path: string; mode: string; type: "blob" | "tree" | "commit"; sha: string; size?: number; url: string }>;
 }
 
-export interface RepositoryPage {
-  repositories: RepositoryRef[];
-  installations: Array<{ id: number; accountLogin: string }>;
-}
-
 export interface CommitAddition {
   path: string;
   bytes: Uint8Array;
@@ -72,46 +66,37 @@ export class GitHubClient {
     return { login: data.login, ...(data.avatar_url ? { avatarUrl: data.avatar_url } : {}) };
   }
 
-  async listAccessiblePrivateRepositories(): Promise<RepositoryPage> {
-    const installations: Array<{ id: number; accountLogin: string }> = [];
+  async listAccessiblePrivateRepositories(): Promise<RepositoryRef[]> {
     const repositories: RepositoryRef[] = [];
-    const installationData = await this.api<{
-      installations: Array<{ id: number; account: { login: string } }>;
-    }>("/user/installations?per_page=100");
-
-    for (const installation of installationData.installations) {
-      installations.push({ id: installation.id, accountLogin: installation.account.login });
-      let page = 1;
-      while (true) {
-        const data = await this.api<{
-          repositories: Array<{
-            id: number;
-            node_id: string;
-            name: string;
-            full_name: string;
-            private: boolean;
-            default_branch: string;
-            owner: { login: string };
-          }>;
-        }>(`/user/installations/${installation.id}/repositories?per_page=100&page=${page}`);
-        for (const repository of data.repositories) {
-          if (!repository.private) continue;
-          repositories.push({
-            id: repository.id,
-            nodeId: repository.node_id,
-            owner: repository.owner.login,
-            name: repository.name,
-            fullName: repository.full_name,
-            private: repository.private,
-            defaultBranch: repository.default_branch,
-            installationId: installation.id
-          });
-        }
-        if (data.repositories.length < 100) break;
-        page += 1;
+    let page = 1;
+    while (true) {
+      const data = await this.api<
+        Array<{
+          id: number;
+          node_id: string;
+          name: string;
+          full_name: string;
+          private: boolean;
+          default_branch: string;
+          owner: { login: string };
+        }>
+      >(`/user/repos?visibility=private&per_page=100&page=${page}`);
+      for (const repository of data) {
+        if (!repository.private) continue;
+        repositories.push({
+          id: repository.id,
+          nodeId: repository.node_id,
+          owner: repository.owner.login,
+          name: repository.name,
+          fullName: repository.full_name,
+          private: repository.private,
+          defaultBranch: repository.default_branch
+        });
       }
+      if (data.length < 100) break;
+      page += 1;
     }
-    return { repositories, installations };
+    return repositories;
   }
 
   async getRepository(owner: string, name: string): Promise<RepositoryRef> {
@@ -380,23 +365,6 @@ export class GitHubClient {
     });
   }
 
-  async listCommits(repository: RepositoryRef, branch: string, page = 1): Promise<CommitSummary[]> {
-    const data = await this.api<
-      Array<{
-        sha: string;
-        html_url: string;
-        commit: { message: string; author: { name: string; date: string } };
-      }>
-    >(`${repoPath(repository)}/commits?sha=${encodeURIComponent(branch)}&per_page=30&page=${page}`);
-    return data.map((item) => ({
-      oid: item.sha,
-      message: item.commit.message,
-      author: item.commit.author.name,
-      authoredAt: item.commit.author.date,
-      htmlUrl: item.html_url
-    }));
-  }
-
   async getFileAtCommit(repository: RepositoryRef, path: string, commitOid: string): Promise<Uint8Array> {
     const data = await this.api<{ type: string; content: string; encoding: string }>(
       `${repoPath(repository)}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(commitOid)}`
@@ -429,7 +397,7 @@ export class GitHubClient {
   }
 
   private async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
-    const token = await this.auth.getValidAccessToken();
+    const token = this.auth.getValidAccessToken();
     const response = await this.requestWithBackoff({
       url: `${API}/graphql`,
       method: "POST",
@@ -451,7 +419,7 @@ export class GitHubClient {
   }
 
   private async api<T = unknown>(path: string, options: ApiOptions = {}): Promise<T> {
-    const token = await this.auth.getValidAccessToken();
+    const token = this.auth.getValidAccessToken();
     const response = await this.requestWithBackoff({
       url: `${API}${path}`,
       method: options.method ?? "GET",

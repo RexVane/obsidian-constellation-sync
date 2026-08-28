@@ -25,7 +25,7 @@ describe("GitHub client request contracts", () => {
       updatedAt: "2026-01-01T00:00:00.000Z",
       policyRevision: 1,
       syncPolicy: {
-        obsidian: { coreSettings: false, themesAndSnippets: false, communityPluginData: [] },
+        obsidian: { communityPluginData: [] },
         ignorePatterns: []
       }
     };
@@ -44,7 +44,7 @@ describe("GitHub client request contracts", () => {
 
   it("renames a branch through the non-administration branch endpoint", async () => {
     const requests: RequestUrlParam[] = [];
-    const client = new GitHubClient({ getValidAccessToken: () => Promise.resolve("token") } as GitHubAuth, (request) => {
+    const client = new GitHubClient({ getValidAccessToken: () => "token" } as GitHubAuth, (request) => {
       requests.push(request);
       return Promise.resolve(response({ name: "project-notes", protected: false, commit: { sha: "head" } }));
     });
@@ -57,6 +57,35 @@ describe("GitHub client request contracts", () => {
     expect(typeof body === "string" ? JSON.parse(body) : null).toEqual({ new_name: "project-notes" });
   });
 
+  it("lists private repositories through /user/repos with pagination", async () => {
+    const requests: RequestUrlParam[] = [];
+    const pageOf = (count: number, base: number): RequestUrlResponse =>
+      response(
+        Array.from({ length: count }, (_, index) => ({
+          id: base + index,
+          node_id: "node",
+          name: `repo-${base + index}`,
+          full_name: `owner/repo-${base + index}`,
+          private: true,
+          default_branch: "main",
+          owner: { login: "owner" }
+        }))
+      );
+    const queue = [pageOf(100, 1), pageOf(1, 101), response([])];
+    const client = new GitHubClient({ getValidAccessToken: () => "token" } as GitHubAuth, (request) => {
+      requests.push(request);
+      return Promise.resolve(queue.shift() ?? response([], 500));
+    });
+
+    const repositories = await client.listAccessiblePrivateRepositories();
+
+    expect(repositories).toHaveLength(101);
+    expect(repositories[0]?.fullName).toBe("owner/repo-1");
+    expect(repositories[100]?.fullName).toBe("owner/repo-101");
+    expect(requests[0]?.url).toBe("https://api.github.com/user/repos?visibility=private&per_page=100&page=1");
+    expect(requests[1]?.url).toBe("https://api.github.com/user/repos?visibility=private&per_page=100&page=2");
+  });
+
   it("reads a recursive tree while excluding the remote marker", async () => {
     const requests: RequestUrlParam[] = [];
     const queue = [
@@ -67,7 +96,7 @@ describe("GitHub client request contracts", () => {
         { path: "note.md", type: "blob", mode: "100644", sha: "note", size: 4, url: "" }
       ] })
     ];
-    const client = new GitHubClient({ getValidAccessToken: () => Promise.resolve("token") } as GitHubAuth, (request) => {
+    const client = new GitHubClient({ getValidAccessToken: () => "token" } as GitHubAuth, (request) => {
       requests.push(request);
       return Promise.resolve(queue.shift() ?? response({}, 500));
     });
@@ -79,14 +108,14 @@ describe("GitHub client request contracts", () => {
   });
 
   it("reports a missing vault marker as null instead of throwing", async () => {
-    const client = new GitHubClient({ getValidAccessToken: () => Promise.resolve("token") } as GitHubAuth, () =>
+    const client = new GitHubClient({ getValidAccessToken: () => "token" } as GitHubAuth, () =>
       Promise.resolve(response({ message: "Not Found" }, 404))
     );
     await expect(client.getVaultMetadata(repository, "work-notes")).resolves.toBeNull();
   });
 
   it("still surfaces non-404 failures from the vault marker request", async () => {
-    const client = new GitHubClient({ getValidAccessToken: () => Promise.resolve("token") } as GitHubAuth, () =>
+    const client = new GitHubClient({ getValidAccessToken: () => "token" } as GitHubAuth, () =>
       Promise.resolve(response({ message: "Bad credentials" }, 401))
     );
     await expect(client.getVaultMetadata(repository, "work-notes")).rejects.toThrow(/Bad credentials/);
@@ -94,7 +123,7 @@ describe("GitHub client request contracts", () => {
 
   it("resolves the head for a commit through GraphQL, not the lagging REST ref", async () => {
     const requests: RequestUrlParam[] = [];
-    const client = new GitHubClient({ getValidAccessToken: () => Promise.resolve("token") } as GitHubAuth, (request) => {
+    const client = new GitHubClient({ getValidAccessToken: () => "token" } as GitHubAuth, (request) => {
       requests.push(request);
       return Promise.resolve(response({ data: { repository: { ref: { target: { oid: "graphql-head" } } } } }));
     });
@@ -105,7 +134,7 @@ describe("GitHub client request contracts", () => {
   });
 
   it("recognizes the moved-branch rejection so a metadata write can be replayed", async () => {
-    const client = new GitHubClient({ getValidAccessToken: () => Promise.resolve("token") } as GitHubAuth, () =>
+    const client = new GitHubClient({ getValidAccessToken: () => "token" } as GitHubAuth, () =>
       Promise.resolve(
         response({ errors: [{ message: 'Expected branch to point to "abc123" but it did not. Pull and try again.' }] })
       )
@@ -137,7 +166,7 @@ describe("GitHub client request contracts", () => {
       }),
       response({ data: { createCommitOnBranch: { commit: { oid: "vault-head" } } } })
     ];
-    const client = new GitHubClient({ getValidAccessToken: () => Promise.resolve("token") } as GitHubAuth, (request) => {
+    const client = new GitHubClient({ getValidAccessToken: () => "token" } as GitHubAuth, (request) => {
       requests.push(request);
       return Promise.resolve(queue.shift() ?? response({}, 500));
     });
@@ -149,7 +178,7 @@ describe("GitHub client request contracts", () => {
       updatedAt: "2026-01-01T00:00:00.000Z",
       policyRevision: 1,
       syncPolicy: {
-        obsidian: { coreSettings: false, themesAndSnippets: false, communityPluginData: [] },
+        obsidian: { communityPluginData: [] },
         ignorePatterns: []
       }
     };

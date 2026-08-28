@@ -14,5 +14,6 @@ Before a public beta, run the following against a disposable private repository:
 - Rename the English name in the dashboard and verify every device follows the new branch through `vaultId`.
 - Rename a branch from GitHub and verify automatic discovery and metadata repair.
 - Restore one file from history and verify a new commit is created.
-- Revoke the App installation and verify local files remain untouched.
+- Connect with a fine-grained token and with a classic token; verify repository listing respects each token's access.
+- Paste an invalid or expired token and verify the error is clear; revoke the token on GitHub and verify local files remain untouched until a new token is pasted.
 - Repeat the core flow on Android and iOS with the app backgrounded and resumed.

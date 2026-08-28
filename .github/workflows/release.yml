@@ -27,11 +27,6 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag || github.event.client_payload.tag }}
       SOURCE_REF: ${{ github.event.release.tag_name || inputs.source_ref || github.event.client_payload.source_ref || 'main' }}
-      # This is public OAuth metadata, not a client secret. Secrets and user
-      # tokens are never placed in the repository or in the build.
-      CONSTELLATION_GITHUB_CLIENT_ID: Iv23liP1SGkZ70ToT0ng
-      CONSTELLATION_GITHUB_APP_SLUG: constellation-sync
-      CONSTELLATION_GITHUB_INSTALL_URL: https://github.com/apps/constellation-sync/installations/new
 
     steps:
       - name: Check out source

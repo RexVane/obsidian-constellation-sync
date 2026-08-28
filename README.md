@@ -22,32 +22,29 @@ Local files are rewritten only after the remote commit succeeds, so a failed pus
 
 ## Security
 
-GitHub App authentication uses OAuth Device Flow and repository-scoped Contents permission. Access and refresh tokens are stored only in Obsidian SecretStorage. A private repository controls access, but it is not end-to-end encryption: GitHub and anyone with repository access can read the synchronized files.
+The plugin connects with a GitHub personal access token that you create once and paste into the plugin. The token is stored only in Obsidian SecretStorage and is never written to your notes, `data.json`, or Git history. A fine-grained token can be limited to the dedicated sync repository with only Contents read/write permission; the classic token pre-filled by the plugin carries the broader `repo` scope and is best created with no expiration. You can revoke the token at any time on GitHub. A private repository controls access, but it is not end-to-end encryption: GitHub and anyone with repository access can read the synchronized files. See [`docs/github-token-setup.md`](docs/github-token-setup.md) for step-by-step instructions.
 
-This repository intentionally contains no user tokens, refresh tokens, client secrets, local vault data or `.env.local` files. Compiled `main.js` is kept out of the source branch and attached only to versioned GitHub Releases. A clean checkout has the project's public OAuth Client ID and App installation URL as reproducible build defaults; developers can override them with `.env.local` when testing a different GitHub App. A GitHub OAuth Client ID is public metadata; never put the App client secret in the plugin or in Git history.
+This repository intentionally contains no user tokens, client secrets, local vault data or `.env.local` files. Compiled `main.js` is kept out of the source branch and attached only to versioned GitHub Releases.
 
 ## Installing the development build
 
 1. Download or clone this repository.
 2. Install Node.js 20 or newer and run `npm ci`.
-3. Optionally copy `.env.example` to `.env.local` to use a different GitHub App; the public release App is used by default.
-4. Run `npm run build`.
-5. Copy `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/constellation-sync/`, then enable the plugin in Obsidian.
+3. Run `npm run build`.
+4. Copy `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/constellation-sync/`, then enable the plugin in Obsidian.
 
-The public repository is source-first. Community-plugin releases contain the configured `main.js` asset needed for one-click installation. The checked-in release defaults are public OAuth metadata, not credentials; no client secret is required or accepted by the plugin.
+The public repository is source-first. Community-plugin releases contain the configured `main.js` asset needed for one-click installation.
 
 ## Development
 
-1. Copy `.env.example` to `.env.local` and provide the public client ID and installation URL of a test GitHub App.
-2. Export the variables in the shell used for building.
-3. Run `npm install`.
-4. Run `npm run dev` for a watch build or `npm run check` for the complete verification suite.
+1. Run `npm install`.
+2. Run `npm run dev` for a watch build or `npm run check` for the complete verification suite.
 
-The GitHub App needs only repository Contents read/write permission. Enable Device Flow and install it only on explicitly selected private repositories. See [`docs/github-app-setup.md`](docs/github-app-setup.md) and [`docs/testing.md`](docs/testing.md) for the full configuration steps.
+No build variables are required: the plugin contains no OAuth client ID, no client secret and no GitHub App configuration. See [`docs/github-token-setup.md`](docs/github-token-setup.md) and [`docs/testing.md`](docs/testing.md) for configuration and testing steps.
 
 ## Status
 
-Version `0.1.8` is the current release: a failed push leaves the vault untouched, one unportable filename cannot stall the whole vault, a device binds to a vault branch only from an explicit choice, and the settings toggles render as toggles. Live OAuth integration uses a public GitHub App Client ID; no client secret is embedded in the plugin.
+Version `0.2.0` is the current release: connecting is a matter of creating a GitHub token and pasting it in — the GitHub App, OAuth Device Flow and every build variable are gone. The dashboard is reduced to Overview and Settings, with conflicts shown inline on the overview, and the sync-policy options are limited to ignore patterns and explicitly listed community plugin data. Devices connected with an older version re-connect once with a token after their App session expires.
 
 ## License
 

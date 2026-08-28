@@ -4,8 +4,6 @@ import { SCHEMA_VERSION } from "./types";
 
 export const DEFAULT_POLICY: SyncPolicy = {
   obsidian: {
-    coreSettings: false,
-    themesAndSnippets: false,
     communityPluginData: []
   },
   ignorePatterns: []

@@ -22,32 +22,29 @@ Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 私有仓库�
 
 ## 安全与隐私
 
-GitHub 登录使用 OAuth Device Flow。访问令牌和刷新令牌只保存在 Obsidian SecretStorage 中，不写入笔记库或 Git 提交。私有仓库只控制访问权限，并不等于端到端加密：GitHub 以及拥有仓库权限的人可以读取同步内容。
+插件使用你创建并粘贴进来的 GitHub 个人访问令牌（PAT）连接 GitHub。令牌只保存在 Obsidian SecretStorage 中，绝不写入笔记文件、`data.json` 或 Git 历史。细粒度令牌可以只授权同步仓库的 Contents 读写权限；插件预填的经典令牌带有更宽的 `repo` 权限，建议设置为永不过期。你随时可以在 GitHub 上吊销令牌。私有仓库只控制访问权限，并不等于端到端加密：GitHub 以及拥有仓库权限的人可以读取同步内容。分步操作说明见 [`docs/github-token-setup.zh-CN.md`](docs/github-token-setup.zh-CN.md)。
 
-本公开仓库不包含用户令牌、刷新令牌、GitHub App Client Secret、本地笔记、`.env.local` 或 Obsidian 配置。编译后的 `main.js` 不提交到源码分支，只作为带版本号的 GitHub Release 资产发布。源码检出后会使用项目公开的 OAuth Client ID 和安装地址作为可复现构建默认值；测试其他 GitHub App 时，再从 `.env.example` 创建 `.env.local` 覆盖它们。Client ID 属于公开元数据，但 App Client Secret 绝不能放入插件或 Git 历史。
+本公开仓库不包含用户令牌、Client Secret、本地笔记或 `.env.local`。编译后的 `main.js` 不提交到源码分支，只作为带版本号的 GitHub Release 资产发布。
 
 ## 安装开发版
 
 1. 下载或克隆本仓库。
 2. 安装 Node.js 20 或更高版本，执行 `npm ci`。
-3. 如需测试其他 GitHub App，可复制 `.env.example` 为 `.env.local` 覆盖公开配置；否则直接使用项目默认配置。
-4. 执行 `npm run build`。
-5. 将 `main.js`、`manifest.json` 和 `styles.css` 复制到 `<笔记库>/.obsidian/plugins/constellation-sync/`，然后在 Obsidian 中启用插件。
+3. 执行 `npm run build`。
+4. 将 `main.js`、`manifest.json` 和 `styles.css` 复制到 `<笔记库>/.obsidian/plugins/constellation-sync/`，然后在 Obsidian 中启用插件。
 
-本项目采用源码优先的公开发布方式；社区插件 Release 会提供已经配置好的 `main.js`，供 Obsidian 一键安装。源码中的默认值只是公开 OAuth 元数据；插件不需要、也不会接受 Client Secret。
+本项目采用源码优先的公开发布方式；社区插件 Release 会提供已经配置好的 `main.js`，供 Obsidian 一键安装。
 
 ## 开发与验证
 
-1. 复制 `.env.example` 为 `.env.local`，填入测试用 GitHub App 的公开 Client ID 和安装地址。
-2. 在构建所用的终端中导出这些环境变量。
-3. 执行 `npm install`。
-4. 执行 `npm run dev` 进入监听模式构建，或 `npm run check` 运行完整验证套件。
+1. 执行 `npm install`。
+2. 执行 `npm run dev` 进入监听模式构建，或 `npm run check` 运行完整验证套件。
 
-GitHub App 只需要仓库 Contents 的读写权限，并且应该只安装到明确选择的私有仓库。更多配置步骤请参阅 [`docs/github-app-setup.md`](docs/github-app-setup.md) 和 [`docs/testing.md`](docs/testing.md)。
+不需要任何构建变量：插件中不含 OAuth Client ID、Client Secret 或 GitHub App 配置。配置与测试步骤请参阅 [`docs/github-token-setup.zh-CN.md`](docs/github-token-setup.zh-CN.md) 和 [`docs/testing.md`](docs/testing.md)。
 
 ## 状态
 
-当前发布版本为 `0.1.8`：推送失败时笔记库保持原样，单个不可移植的文件名不会拖住整个笔记库，设备只在显式选择后才绑定笔记库分支，设置项开关也已正常渲染为开关。线上 OAuth 集成使用公开的 GitHub App Client ID；插件中不含任何 Client Secret。
+当前发布版本为 `0.2.0`：连接 GitHub 只需创建一个访问令牌并粘贴进来——GitHub App、OAuth 设备流和所有构建变量都已移除。仪表盘精简为"概览"和"设置"两页，冲突直接显示在概览中，同步策略只保留忽略规则和显式列出的社区插件数据。使用旧版本连接的设备，在 App 会话过期后用令牌重新登录一次即可。
 
 ## 开源协议
 

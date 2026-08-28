@@ -7,8 +7,6 @@ import { SyncChangedDuringRunError, SyncEngine, SyncReviewRequiredError } from "
 import { ObsidianVaultStore } from "./sync/vault-store";
 import {
   SCHEMA_VERSION,
-  type CommitSummary,
-  type DeviceCode,
   type LocaleSetting,
   type PluginSettings,
   type RemoteVaultSummary,
@@ -23,12 +21,6 @@ import { normalizeRepoPath, shouldSyncPath } from "./utils/path";
 import { ConstellationDashboardView, DASHBOARD_VIEW_TYPE } from "./ui/dashboard-view";
 import { ConstellationSettingTab } from "./ui/settings-tab";
 
-const APP_CONFIG = {
-  clientId: __GITHUB_CLIENT_ID__,
-  appSlug: __GITHUB_APP_SLUG__,
-  installUrl: __GITHUB_INSTALL_URL__
-};
-
 export default class ConstellationSyncPlugin extends Plugin implements DashboardController {
   override settings: PluginSettings = createDefaultSettings();
   private status: RuntimeStatus = { kind: "unconfigured", message: "Not configured" };
@@ -40,9 +32,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   private repositories: RepositoryRef[] = [];
   private remoteVaults: RemoteVaultSummary[] = [];
   private selectedRepository?: RepositoryRef;
-  private deviceCode?: DeviceCode;
-  private commits: CommitSummary[] = [];
-  private loginAbort?: AbortController;
   private operationQueue: Promise<void> = Promise.resolve();
   private localTimer: number | null = null;
   private lastRemotePollAt = 0;
@@ -57,7 +46,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       // ensures a revoked session can never be used again.
       removeSecret: (key) => this.app.secretStorage.setSecret(key, "")
     };
-    this.auth = new GitHubAuth(APP_CONFIG, secretStore);
+    this.auth = new GitHubAuth(secretStore);
     this.github = new GitHubClient(this.auth);
     this.vaultStore = new ObsidianVaultStore(this.app);
     this.engine = new SyncEngine(this.github, this.vaultStore);
@@ -68,7 +57,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     this.addCommand({ id: "sync-now", name: "Sync now", callback: () => void this.syncNow() });
     this.addCommand({ id: "pause-auto-sync", name: "Pause automatic sync", callback: () => void this.updatePreference("paused", true) });
     this.addCommand({ id: "resume-auto-sync", name: "Resume automatic sync", callback: () => void this.updatePreference("paused", false) });
-    this.addCommand({ id: "open-conflicts", name: "Open conflicts", callback: () => void this.activateView() });
     this.addCommand({ id: "verify-binding", name: "Verify repository binding", callback: () => void this.verifyBinding() });
     this.addSettingTab(new ConstellationSettingTab(this.app, this));
 
@@ -91,7 +79,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   override onunload(): void {
-    this.loginAbort?.abort();
     if (this.localTimer !== null) window.clearTimeout(this.localTimer);
   }
 
@@ -101,15 +88,11 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     return {
       settings: structuredClone(this.settings),
       status: { ...this.status },
-      githubConfigured: this.auth.isConfigured(),
-      appInstallUrl: APP_CONFIG.installUrl,
-      ...(this.deviceCode ? { deviceCode: { ...this.deviceCode } } : {}),
       repositories: [...this.repositories],
       ...(this.selectedRepository ? { selectedRepository: { ...this.selectedRepository } } : {}),
       remoteVaults: structuredClone(this.remoteVaults),
       localVaultName,
       ...(suggestedBranch ? { suggestedBranch } : {}),
-      commits: [...this.commits],
       rateLimit: this.github.getRateLimit()
     };
   }
@@ -128,33 +111,21 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     await this.app.workspace.revealLeaf(leaf);
   }
 
-  async startLogin(): Promise<void> {
-    this.loginAbort?.abort();
-    this.loginAbort = new AbortController();
-    this.setStatus("syncing", "Requesting GitHub device code…");
-    this.deviceCode = await this.auth.beginDeviceFlow();
-    this.emit();
-    this.openExternal(this.deviceCode.verificationUri);
+  async connectWithToken(token: string): Promise<void> {
+    this.setStatus("scanning", "Verifying GitHub token…");
     try {
-      await this.auth.pollDeviceFlow(this.deviceCode, this.loginAbort.signal);
-      delete this.deviceCode;
+      this.auth.setPatSession(token);
       this.settings.account = await this.github.getAccount();
       this.addActivity("login", `Connected GitHub account @${this.settings.account.login}`);
       await this.saveSettings();
       await this.refreshRepositories();
       this.setStatus("idle", "GitHub connected");
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      delete this.deviceCode;
+      // A token that failed verification must never linger in storage.
+      this.auth.signOut();
       this.handleError(error);
       throw error;
     }
-  }
-
-  cancelLogin(): void {
-    this.loginAbort?.abort();
-    delete this.deviceCode;
-    this.setStatus("idle", "GitHub sign-in cancelled");
   }
 
   openExternal(url: string): void {
@@ -166,8 +137,8 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   async refreshRepositories(): Promise<void> {
     this.setStatus("scanning", "Loading private repositories…");
     try {
-      const page = await this.github.listAccessiblePrivateRepositories();
-      this.repositories = page.repositories.sort((left, right) => left.fullName.localeCompare(right.fullName));
+      const repositories = await this.github.listAccessiblePrivateRepositories();
+      this.repositories = repositories.sort((left, right) => left.fullName.localeCompare(right.fullName));
       if (this.selectedRepository) {
         const nextSelected = this.repositories.find((item) => item.id === this.selectedRepository?.id);
         if (nextSelected) this.selectedRepository = nextSelected;
@@ -385,12 +356,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     this.setStatus(this.settings.conflicts.some((item) => !item.resolved) ? "conflict" : "idle", "Conflict status updated");
   }
 
-  async loadHistory(page = 1): Promise<void> {
-    const binding = this.requireBinding();
-    this.commits = await this.github.listCommits(binding.repository, binding.branch, page);
-    this.emit();
-  }
-
   async restoreFile(path: string, commitOid: string): Promise<void> {
     return this.enqueueOperation(() => this.restoreFileInternal(path, commitOid));
   }
@@ -436,14 +401,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     if (key === "autoSync" && value === true) this.scheduleLocalSync();
   }
 
-  async updateObsidianPolicy(key: "coreSettings" | "themesAndSnippets", value: boolean): Promise<void> {
-    return this.enqueueOperation(() => {
-      const next = structuredClone(this.settings.policy);
-      next.obsidian[key] = value;
-      return this.persistSharedPolicy(next);
-    });
-  }
-
   async updateIgnorePatterns(value: string): Promise<void> {
     return this.enqueueOperation(() => {
       const next = structuredClone(this.settings.policy);
@@ -472,7 +429,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     delete this.settings.pendingReview;
     this.settings.baseManifest = {};
     this.remoteVaults = [];
-    this.commits = [];
     this.addActivity("warning", `Disconnected this device${branch ? ` from ${branch}` : ""}`);
     await this.saveSettings();
     this.setStatus("unconfigured", "Vault not bound");
@@ -493,10 +449,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   private async initializeSession(): Promise<void> {
-    if (!this.auth.isConfigured()) {
-      this.setStatus("unconfigured", "GitHub App build configuration required");
-      return;
-    }
     if (!this.auth.getSession()) {
       this.setStatus("unconfigured", "Connect GitHub to begin");
       return;
@@ -619,7 +571,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     const canonical = await this.github.getRepository(binding.repository.owner, binding.repository.name);
     if (canonical.id !== binding.repository.id) throw new Error("The bound repository identity changed.");
     if (!canonical.private) throw new Error("The bound repository is public. Synchronization is blocked.");
-    binding.repository = { ...canonical, ...(binding.repository.installationId ? { installationId: binding.repository.installationId } : {}) };
+    binding.repository = canonical;
 
     let branch = binding.branch;
     try {
@@ -814,6 +766,11 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       if (error.code === "rate-limited") kind = "rate-limited";
       else if (error.status === 401) kind = "reauth-required";
       else if (error.status === 0) kind = "offline";
+    }
+    if (kind === "reauth-required") {
+      // A dead token cannot recover by itself; showing the token screen again is
+      // the only way forward, so the connected account must not keep it hidden.
+      delete this.settings.account;
     }
     this.addActivity("error", `${code}: ${message}`);
     void this.saveSettings();

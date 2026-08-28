@@ -392,22 +392,24 @@
 .cs-alert.is-info { color: color-mix(in srgb, var(--cs-cyan) 72%, var(--cs-text)); border-color: color-mix(in srgb, var(--cs-cyan) 25%, var(--cs-border)); }
 .cs-confirmation { flex-direction: column; }
 
-.cs-device-flow {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  margin-top: 20px;
+.cs-advanced {
+  border-top: 1px solid var(--cs-border);
+  padding-top: var(--cs-gap-sm);
 }
 
-.cs-device-flow code {
-  padding: 10px 18px;
-  color: var(--cs-cyan);
-  border: 1px solid color-mix(in srgb, var(--cs-cyan) 35%, var(--cs-border));
-  border-radius: var(--cs-radius);
-  background: color-mix(in srgb, var(--cs-cyan) 7%, var(--cs-canvas));
-  font-size: 24px;
-  letter-spacing: 0.13em;
+.cs-advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--cs-muted);
+}
+
+.cs-advanced summary:hover { color: var(--cs-text); }
+
+.cs-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cs-gap-sm);
+  margin-top: var(--cs-gap-sm);
 }
 
 .cs-field {

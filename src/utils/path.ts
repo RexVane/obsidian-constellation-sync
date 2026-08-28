@@ -36,12 +36,9 @@ export function shouldSyncPath(path: string, policy: SyncPolicy, configDir: stri
 
   const configPrefix = `${configRoot}/`;
   if (normalized.startsWith(configPrefix)) {
-    const relative = normalized.slice(configPrefix.length);
-    if (isCoreSetting(relative) && !policy.obsidian.coreSettings) return false;
-    if (isThemeOrSnippet(relative) && !policy.obsidian.themesAndSnippets) return false;
-    const pluginId = communityPluginId(relative);
-    if (pluginId && !policy.obsidian.communityPluginData.includes(pluginId)) return false;
-    if (!isCoreSetting(relative) && !isThemeOrSnippet(relative) && !pluginId) return false;
+    // Only explicitly listed community-plugin data leaves the config directory.
+    const pluginId = communityPluginId(normalized.slice(configPrefix.length));
+    if (!pluginId || !policy.obsidian.communityPluginData.includes(pluginId)) return false;
   }
 
   let included = true;
@@ -99,14 +96,6 @@ export function globToRegExp(pattern: string): RegExp {
     }
   }
   return new RegExp(`${output}$`);
-}
-
-function isCoreSetting(path: string): boolean {
-  return /^(app|appearance|hotkeys|core-plugins(?:-migration)?|types|graph)\.json$/.test(path);
-}
-
-function isThemeOrSnippet(path: string): boolean {
-  return /^(themes|snippets)\//.test(path);
 }
 
 function communityPluginId(path: string): string | null {

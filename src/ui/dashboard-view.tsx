@@ -3,11 +3,13 @@ import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { DashboardController, DashboardSnapshot } from "../controller";
 import { translator, type TranslationKey } from "../i18n";
-import type { SyncPlanSummary } from "../types";
+import type { ConflictRecord, SyncPlanSummary } from "../types";
 
 export const DASHBOARD_VIEW_TYPE = "constellation-sync-dashboard";
 
-type Page = "overview" | "vaults" | "history" | "conflicts" | "settings" | "diagnostics";
+const TOKEN_CREATION_URL = "https://github.com/settings/tokens/new?description=Constellation%20Sync&scopes=repo";
+
+type Page = "overview" | "settings";
 
 export class ConstellationDashboardView extends ItemView {
   constructor(
@@ -79,7 +81,7 @@ function Dashboard({ controller }: { controller: DashboardController }): preact.
             <button class={page === item.id ? "is-active" : ""} onClick={() => setPage(item.id)}>
               <Icon name={item.icon} />
               <span>{t(item.label)}</span>
-              {item.id === "conflicts" && unresolvedCount(snapshot) > 0 ? <Badge>{unresolvedCount(snapshot)}</Badge> : null}
+              {item.id === "overview" && unresolvedConflicts(snapshot).length > 0 ? <Badge>{unresolvedConflicts(snapshot).length}</Badge> : null}
             </button>
           ))}
         </nav>
@@ -106,7 +108,7 @@ function Dashboard({ controller }: { controller: DashboardController }): preact.
         {error ? <div class="cs-alert is-error"><Icon name="circle-alert" /><span>{error}</span></div> : null}
         {!snapshot.settings.account ? (
           <LoginPanel snapshot={snapshot} controller={controller} run={run} t={t} />
-        ) : !snapshot.settings.binding && page !== "settings" && page !== "diagnostics" ? (
+        ) : !snapshot.settings.binding && page !== "settings" ? (
           <VaultSetup snapshot={snapshot} controller={controller} run={run} t={t} />
         ) : (
           <PageContent page={page} snapshot={snapshot} controller={controller} run={run} t={t} />
@@ -118,31 +120,38 @@ function Dashboard({ controller }: { controller: DashboardController }): preact.
 
 function LoginPanel(props: PanelProps): preact.JSX.Element {
   const { snapshot, controller, run, t } = props;
+  const [token, setToken] = useState("");
   return (
     <section class="cs-auth-shell">
       <div class="cs-card cs-auth-card">
         <div class="cs-orbit-mark"><Icon name="orbit" /></div>
-        <p class="cs-kicker">GitHub OAuth</p>
+        <p class="cs-kicker">GitHub</p>
         <h2>{t("connectGithub")}</h2>
         <p>{t("connectDescription")}</p>
         <div class="cs-alert is-warning"><Icon name="shield-alert" /><span>{t("privateNotEncrypted")}</span></div>
-        {!snapshot.githubConfigured ? <div class="cs-alert is-error">{t("appNotConfigured")}</div> : null}
-        {snapshot.deviceCode ? (
-          <div class="cs-device-flow">
-            <span>{t("userCode")}</span>
-            <code>{snapshot.deviceCode.userCode}</code>
-            <div class="cs-actions">
-              <button class="cs-button" onClick={() => void navigator.clipboard.writeText(snapshot.deviceCode?.userCode ?? "")}>{t("copyCode")}</button>
-              <button class="cs-button cs-button-primary" onClick={() => controller.openExternal(snapshot.deviceCode?.verificationUri ?? "")}>{t("openGithub")}</button>
-              <button class="cs-button cs-button-quiet" onClick={() => controller.cancelLogin()}>{t("cancel")}</button>
-            </div>
-            <p class="cs-muted cs-pulse">{t("authorizeWaiting")}</p>
-          </div>
-        ) : (
-          <button class="cs-button cs-button-primary" disabled={!snapshot.githubConfigured || busy(snapshot)} onClick={() => void run(() => controller.startLogin())}>
-            <Icon name="github" /> {t("startLogin")}
+        <div class="cs-actions">
+          <button class="cs-button" onClick={() => controller.openExternal(TOKEN_CREATION_URL)}>
+            <Icon name="key-round" /> {t("createToken")}
           </button>
-        )}
+        </div>
+        <label class="cs-field">
+          <span>{t("tokenField")}</span>
+          <input
+            type="password"
+            value={token}
+            placeholder="ghp_… / github_pat_…"
+            onInput={(event) => setToken(event.currentTarget.value)}
+          />
+          <small>{t("tokenHelp")}</small>
+        </label>
+        <button
+          class="cs-button cs-button-primary"
+          disabled={!token.trim() || busy(snapshot)}
+          onClick={() => void run(() => controller.connectWithToken(token))}
+        >
+          {t("connectGithub")}
+        </button>
+        <p class="cs-muted">{t("tokenFineGrainedHelp")}</p>
       </div>
     </section>
   );
@@ -164,7 +173,6 @@ function VaultSetup(props: PanelProps): preact.JSX.Element {
         <div class="cs-card-header">
           <div><p class="cs-kicker">GitHub</p><h2>{t("repositories")}</h2></div>
           <div class="cs-actions">
-            {snapshot.appInstallUrl ? <button class="cs-button" onClick={() => controller.openExternal(snapshot.appInstallUrl)}>{t("installApp")}</button> : null}
             <button class="cs-button" disabled={busy(snapshot)} onClick={() => void run(() => controller.refreshRepositories())}><Icon name="refresh-cw" /> {t("refresh")}</button>
           </div>
         </div>
@@ -211,17 +219,14 @@ function VaultSetup(props: PanelProps): preact.JSX.Element {
 
 function PageContent(props: PanelProps & { page: Page }): preact.JSX.Element {
   if (props.page === "overview") return <Overview {...props} />;
-  if (props.page === "vaults") return <VaultPage {...props} />;
-  if (props.page === "history") return <HistoryPage {...props} />;
-  if (props.page === "conflicts") return <ConflictsPage {...props} />;
-  if (props.page === "settings") return <SettingsPage {...props} />;
-  return <DiagnosticsPage {...props} />;
+  return <SettingsPage {...props} />;
 }
 
 function Overview({ snapshot, controller, run, t }: PanelProps): preact.JSX.Element {
   const binding = snapshot.settings.binding;
   if (!binding) return <Empty>{t("notBound")}</Empty>;
   const pending = snapshot.settings.pendingReview?.plan;
+  const conflicts = unresolvedConflicts(snapshot);
   return (
     <div class="cs-stack">
       <div class="cs-metric-grid">
@@ -247,6 +252,21 @@ function Overview({ snapshot, controller, run, t }: PanelProps): preact.JSX.Elem
           <button class="cs-button cs-button-primary cs-button-large" disabled={busy(snapshot)} onClick={() => void run(() => controller.syncNow())}><Icon name="refresh-cw" /> {t("syncNow")}</button>
         </section>
       )}
+      {conflicts.length > 0 ? (
+        <section class="cs-card">
+          <div class="cs-card-header"><div><p class="cs-kicker">{t("conflicts")}</p><h2>{t("unresolved")}</h2></div><Badge>{conflicts.length}</Badge></div>
+          <p class="cs-muted">{t("conflictHelp")}</p>
+          <div class="cs-list">
+            {conflicts.map((item) => (
+              <div class="cs-list-row cs-conflict-row">
+                <Icon name="triangle-alert" />
+                <span><strong>{item.path}</strong><small>{item.reason}{item.conflictPath ? ` · ${item.conflictPath}` : ""} · {formatDate(item.createdAt)}</small></span>
+                <button class="cs-button" onClick={() => void run(() => controller.resolveConflict(item.id))}>{t("markResolved")}</button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
       {snapshot.settings.skippedFiles.length > 0 ? (
         <section class="cs-card">
           <div class="cs-alert is-warning"><Icon name="triangle-alert" /><span>{t("skippedHelp")}</span></div>
@@ -258,99 +278,74 @@ function Overview({ snapshot, controller, run, t }: PanelProps): preact.JSX.Elem
   );
 }
 
-function VaultPage({ snapshot, controller, run, t }: PanelProps): preact.JSX.Element {
-  const binding = snapshot.settings.binding;
-  const [name, setName] = useState(binding?.branch ?? "");
-  const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
-  useEffect(() => setName(binding?.branch ?? ""), [binding?.branch]);
-  if (!binding) return <Empty>{t("notBound")}</Empty>;
-  return (
-    <div class="cs-two-column">
-      <section class="cs-card">
-        <p class="cs-kicker">{t("currentVault")}</p>
-        <h2>{binding.branch}</h2>
-        <Definition label={t("repository")} value={binding.repository.fullName} />
-        <Definition label={t("branch")} value={binding.branch} mono />
-        <Definition label={t("vaultId")} value={binding.vaultId} mono />
-        <div class="cs-actions cs-vault-actions">
-          <button class="cs-button is-danger" disabled={busy(snapshot)} onClick={() => setConfirmingDisconnect(true)}>{t("disconnect")}</button>
-        </div>
-        {confirmingDisconnect ? (
-          <div class="cs-alert is-warning cs-confirmation" role="alertdialog" aria-live="polite">
-            <span>{t("disconnectConfirm")}</span>
-            <div class="cs-actions">
-              <button class="cs-button" onClick={() => setConfirmingDisconnect(false)}>{t("cancel")}</button>
-              <button class="cs-button is-danger" disabled={busy(snapshot)} onClick={() => {
-                setConfirmingDisconnect(false);
-                void run(() => controller.disconnectVault());
-              }}>{t("disconnect")}</button>
-            </div>
-          </div>
-        ) : null}
-      </section>
-      <section class="cs-card">
-        <p class="cs-kicker">Shared identity</p>
-        <h2>{t("rename")}</h2>
-        <p>{t("renameHelp")}</p>
-        <label class="cs-field"><span>{t("englishName")}</span><input value={name} onInput={(event) => setName(event.currentTarget.value)} /><small>{t("branchHelp")}</small></label>
-        <button class="cs-button cs-button-primary" disabled={name === binding.branch || busy(snapshot)} onClick={() => void run(() => controller.renameVault(name))}>{t("rename")}</button>
-      </section>
-    </div>
-  );
-}
-
-function HistoryPage({ snapshot, controller, run, t }: PanelProps): preact.JSX.Element {
-  const [path, setPath] = useState("");
-  const [commit, setCommit] = useState("");
-  return (
-    <div class="cs-stack">
-      <section class="cs-card">
-        <div class="cs-card-header"><div><p class="cs-kicker">Local activity</p><h2>{t("history")}</h2></div><button class="cs-button" onClick={() => void run(() => controller.loadHistory())}>{t("historyLoad")}</button></div>
-        <ActivityList snapshot={snapshot} t={t} />
-      </section>
-      {snapshot.commits.length > 0 ? <section class="cs-card"><div class="cs-list">{snapshot.commits.map((entry) => <div class="cs-list-row"><Icon name="git-commit-horizontal" /><span><strong>{entry.message.split("\n")[0]}</strong><small>{entry.oid.slice(0, 8)} · {formatDate(entry.authoredAt)} · {entry.author}</small></span><button class="cs-button" onClick={() => controller.openExternal(entry.htmlUrl)}>{t("openCommit")}</button></div>)}</div></section> : null}
-      <section class="cs-card">
-        <p class="cs-kicker">Non-destructive restore</p><h2>{t("restore")}</h2><p>{t("restoreHelp")}</p>
-        <div class="cs-form-grid"><label class="cs-field"><span>{t("restorePath")}</span><input value={path} onInput={(event) => setPath(event.currentTarget.value)} placeholder="Notes/example.md" /></label><label class="cs-field"><span>{t("restoreCommit")}</span><input value={commit} onInput={(event) => setCommit(event.currentTarget.value)} placeholder="commit SHA" /></label></div>
-        <button class="cs-button cs-button-primary" disabled={!path || !commit || busy(snapshot)} onClick={() => void run(() => controller.restoreFile(path, commit))}>{t("restore")}</button>
-      </section>
-    </div>
-  );
-}
-
-function ConflictsPage({ snapshot, controller, run, t }: PanelProps): preact.JSX.Element {
-  const conflicts = snapshot.settings.conflicts.filter((item) => !item.resolved);
-  return <section class="cs-card">{conflicts.length === 0 ? <Empty>{t("noConflicts")}</Empty> : <div class="cs-list">{conflicts.map((item) => <div class="cs-list-row cs-conflict-row"><Icon name="triangle-alert" /><span><strong>{item.path}</strong><small>{item.reason}{item.conflictPath ? ` · ${item.conflictPath}` : ""} · {formatDate(item.createdAt)}</small></span><button class="cs-button" onClick={() => void run(() => controller.resolveConflict(item.id))}>{t("markResolved")}</button></div>)}</div>}</section>;
-}
-
 function SettingsPage({ snapshot, controller, run, t }: PanelProps): preact.JSX.Element {
   const settings = snapshot.settings;
+  const binding = settings.binding;
+  const [name, setName] = useState(binding?.branch ?? "");
   const [deviceName, setDeviceName] = useState(settings.deviceName);
   const [ignores, setIgnores] = useState(settings.policy.ignorePatterns.join("\n"));
   const [plugins, setPlugins] = useState(settings.policy.obsidian.communityPluginData.join("\n"));
+  const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
+  const [restorePath, setRestorePath] = useState("");
+  const [restoreCommit, setRestoreCommit] = useState("");
+
+  useEffect(() => setName(binding?.branch ?? ""), [binding?.branch]);
+
   return (
     <div class="cs-stack">
+      {binding ? (
+        <section class="cs-card">
+          <p class="cs-kicker">{t("currentVault")}</p>
+          <h2>{binding.branch}</h2>
+          <Definition label={t("repository")} value={binding.repository.fullName} />
+          <Definition label={t("vaultId")} value={binding.vaultId} mono />
+          <p class="cs-muted">{t("renameHelp")}</p>
+          <label class="cs-field"><span>{t("englishName")}</span><input value={name} onInput={(event) => setName(event.currentTarget.value)} /><small>{t("branchHelp")}</small></label>
+          <div class="cs-actions">
+            <button class="cs-button cs-button-primary" disabled={name === binding.branch || busy(snapshot)} onClick={() => void run(() => controller.renameVault(name))}>{t("rename")}</button>
+            <button class="cs-button is-danger" disabled={busy(snapshot)} onClick={() => setConfirmingDisconnect(true)}>{t("disconnect")}</button>
+          </div>
+          {confirmingDisconnect ? (
+            <div class="cs-alert is-warning cs-confirmation" role="alertdialog" aria-live="polite">
+              <span>{t("disconnectConfirm")}</span>
+              <div class="cs-actions">
+                <button class="cs-button" onClick={() => setConfirmingDisconnect(false)}>{t("cancel")}</button>
+                <button class="cs-button is-danger" disabled={busy(snapshot)} onClick={() => {
+                  setConfirmingDisconnect(false);
+                  void run(() => controller.disconnectVault());
+                }}>{t("disconnect")}</button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
       <section class="cs-card cs-settings-list">
         <Toggle label={t("automaticSync")} checked={settings.autoSync} onChange={(value) => void run(() => controller.updatePreference("autoSync", value))} />
         <Toggle label={t("paused")} checked={settings.paused} onChange={(value) => void run(() => controller.updatePreference("paused", value))} />
-        <Toggle label={t("coreSettings")} checked={settings.policy.obsidian.coreSettings} onChange={(value) => void run(() => controller.updateObsidianPolicy("coreSettings", value))} />
-        <Toggle label={t("themesSnippets")} checked={settings.policy.obsidian.themesAndSnippets} onChange={(value) => void run(() => controller.updateObsidianPolicy("themesAndSnippets", value))} />
         <label class="cs-setting-row"><span><strong>{t("language")}</strong></span><select value={settings.locale} onChange={(event) => void run(() => controller.updatePreference("locale", event.currentTarget.value as "auto" | "zh-CN" | "en"))}><option value="auto">{t("followObsidian")}</option><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
         <label class="cs-setting-row"><span><strong>{t("deviceName")}</strong></span><div class="cs-inline-field"><input value={deviceName} onInput={(event) => setDeviceName(event.currentTarget.value)} /><button class="cs-button" onClick={() => void run(() => controller.updatePreference("deviceName", deviceName))}>{t("save")}</button></div></label>
       </section>
       <section class="cs-card"><label class="cs-field"><span>{t("ignores")}</span><textarea rows={8} value={ignores} onInput={(event) => setIgnores(event.currentTarget.value)} /><small>{t("ignoresHelp")}</small></label><button class="cs-button cs-button-primary" onClick={() => void run(() => controller.updateIgnorePatterns(ignores))}>{t("save")}</button></section>
       <section class="cs-card"><label class="cs-field"><span>{t("communityPlugins")}</span><textarea rows={5} value={plugins} placeholder="dataview" onInput={(event) => setPlugins(event.currentTarget.value)} /><small>{t("communityPluginsHelp")}</small></label><button class="cs-button cs-button-primary" onClick={() => void run(() => controller.updateCommunityPluginData(plugins.split(/\r?\n/)))}>{t("save")}</button></section>
-      <section class="cs-card cs-danger-zone"><p class="cs-kicker">{t("danger")}</p><div class="cs-actions"><button class="cs-button" disabled={!settings.binding} onClick={() => void run(() => controller.disconnectVault())}>{t("disconnect")}</button><button class="cs-button is-danger" disabled={!settings.account} onClick={() => void run(() => controller.signOut())}>{t("signOut")}</button></div></section>
-    </div>
-  );
-}
-
-function DiagnosticsPage({ snapshot, t }: PanelProps): preact.JSX.Element {
-  const binding = snapshot.settings.binding;
-  return (
-    <div class="cs-two-column">
-      <section class="cs-card"><p class="cs-kicker">Runtime</p><h2>{t("diagnostics")}</h2><Definition label={t("status")} value={snapshot.status.kind} /><Definition label={t("diagnosticsRate")} value={snapshot.rateLimit.remaining === null ? "—" : String(snapshot.rateLimit.remaining)} /><Definition label={t("schema")} value={String(snapshot.settings.schemaVersion)} /><Definition label="GitHub App" value={snapshot.githubConfigured ? "configured" : "not configured"} /></section>
-      <section class="cs-card"><p class="cs-kicker">Binding</p><h2>{binding?.branch ?? t("notBound")}</h2><Definition label={t("vaultId")} value={binding?.vaultId ?? "—"} mono /><Definition label={t("baseCommit")} value={binding?.baseCommitOid ?? "—"} mono /><Definition label={t("repository")} value={binding?.repository.fullName ?? "—"} /></section>
+      <section class="cs-card">
+        <details class="cs-advanced">
+          <summary>{t("advanced")}</summary>
+          <div class="cs-advanced-body">
+            <Definition label={t("status")} value={snapshot.status.kind} />
+            <Definition label={t("diagnosticsRate")} value={snapshot.rateLimit.remaining === null ? "—" : String(snapshot.rateLimit.remaining)} />
+            <Definition label={t("schema")} value={String(settings.schemaVersion)} />
+            <Definition label={t("baseCommit")} value={binding?.baseCommitOid ?? "—"} mono />
+            <p class="cs-kicker">{t("restore")}</p>
+            <p class="cs-muted">{t("restoreHelp")}</p>
+            <div class="cs-form-grid">
+              <label class="cs-field"><span>{t("restorePath")}</span><input value={restorePath} onInput={(event) => setRestorePath(event.currentTarget.value)} placeholder="Notes/example.md" /></label>
+              <label class="cs-field"><span>{t("restoreCommit")}</span><input value={restoreCommit} onInput={(event) => setRestoreCommit(event.currentTarget.value)} placeholder="commit SHA" /></label>
+            </div>
+            <button class="cs-button" disabled={!restorePath || !restoreCommit || busy(snapshot)} onClick={() => void run(() => controller.restoreFile(restorePath, restoreCommit))}>{t("restore")}</button>
+          </div>
+        </details>
+      </section>
+      <section class="cs-card cs-danger-zone"><p class="cs-kicker">{t("danger")}</p><div class="cs-actions"><button class="cs-button is-danger" disabled={!settings.account} onClick={() => void run(() => controller.signOut())}>{t("signOut")}</button></div></section>
     </div>
   );
 }
@@ -364,12 +359,12 @@ interface PanelProps {
 
 const NAV_ITEMS: Array<{ id: Page; label: TranslationKey; icon: string }> = [
   { id: "overview", label: "overview", icon: "layout-dashboard" },
-  { id: "vaults", label: "vaults", icon: "boxes" },
-  { id: "history", label: "history", icon: "history" },
-  { id: "conflicts", label: "conflicts", icon: "triangle-alert" },
-  { id: "settings", label: "settings", icon: "settings-2" },
-  { id: "diagnostics", label: "diagnostics", icon: "stethoscope" }
+  { id: "settings", label: "settings", icon: "settings-2" }
 ];
+
+function unresolvedConflicts(snapshot: DashboardSnapshot): ConflictRecord[] {
+  return snapshot.settings.conflicts.filter((item) => !item.resolved);
+}
 
 function useController(controller: DashboardController): DashboardSnapshot {
   const [snapshot, setSnapshot] = useState(() => controller.snapshot());
@@ -422,10 +417,6 @@ function Definition({ label, value, mono = false }: { label: string; value: stri
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }): preact.JSX.Element {
   return <label class="cs-setting-row"><span><strong>{label}</strong></span><input class="cs-switch" type="checkbox" checked={checked} onChange={(event) => onChange(event.currentTarget.checked)} /></label>;
-}
-
-function unresolvedCount(snapshot: DashboardSnapshot): number {
-  return snapshot.settings.conflicts.filter((item) => !item.resolved).length;
 }
 
 function busy(snapshot: DashboardSnapshot): boolean {

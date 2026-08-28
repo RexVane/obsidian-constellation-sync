@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0 — Sign in with a GitHub token
+
+Breaking change: the GitHub App and OAuth Device Flow are gone. Existing devices keep working until their App session expires, then re-connect once by pasting a token.
+
+- Connect by pasting a GitHub personal access token. The plugin validates it, stores it only in Obsidian SecretStorage, and lists private repositories through `/user/repos`. A fine-grained token limited to the sync repository is the least-privilege option; the login screen offers a one-click pre-filled classic token page. Step-by-step instructions live in the new `docs/github-token-setup.md` (English and Chinese).
+- Remove every build variable, `.env.example`, the release-workflow OAuth defaults and the "install the App" detour — the plugin carries no OAuth metadata at all now.
+- When a token expires or is revoked, the plugin clears the stored account and shows the token screen again instead of failing in the background.
+- Reduce the dashboard to two pages: Overview (status, sync, pending review, inline conflicts, skipped files, recent activity) and Settings (vault management with rename and disconnect, preferences, shared policy, an advanced section with diagnostics and file restore, sign-out).
+- Drop the "sync core Obsidian settings" and "sync themes and CSS snippets" policy toggles and their plumbing. The shared policy now only carries ignore patterns and explicitly listed community plugin data; policy fields written by older devices are ignored gracefully.
+- Remove the standalone history page. Restoring a file from a commit moves into the settings' advanced section; commit browsing remains available on github.com.
+
 ## 0.1.8 — Reliable shared policy changes
 
 - Resolve the head for a commit through GraphQL. The REST ref endpoint is served from a replica and can still report the previous commit moments after a write, while `createCommitOnBranch` is strongly consistent, so a policy change made shortly after a sync failed with `Expected branch to point to ... but it did not`.
