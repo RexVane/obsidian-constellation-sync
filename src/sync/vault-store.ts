@@ -2,6 +2,11 @@ import { normalizePath, TFile, type App } from "obsidian";
 import type { SnapshotManifest, SyncPolicy } from "../types";
 import { gitBlobOid } from "../utils/hash";
 import { findPortableCollisions, shouldSyncPath, validatePortablePath } from "../utils/path";
+import {
+  isEmptyDirectoryMarker,
+  reconcileEmptyDirectoryMarkers,
+  removeEmptyDirectoryMarker
+} from "./empty-directories";
 
 export interface LocalScan {
   manifest: SnapshotManifest;
@@ -26,12 +31,14 @@ export class ObsidianVaultStore implements VaultStore {
 
   async scan(policy: SyncPolicy): Promise<LocalScan> {
     const configDir = this.configDir();
+    const emptyDirectoryMarkers = await reconcileEmptyDirectoryMarkers(this.app.vault.adapter, policy, configDir);
     const paths = new Set(
       this.app.vault
         .getFiles()
         .map((file) => file.path)
-        .filter((path) => shouldSyncPath(path, policy, configDir))
+        .filter((path) => !isEmptyDirectoryMarker(path) && shouldSyncPath(path, policy, configDir))
     );
+    for (const marker of emptyDirectoryMarkers) paths.add(marker);
     if (
       policy.obsidian.coreSettings ||
       policy.obsidian.themesAndSnippets ||
@@ -65,6 +72,10 @@ export class ObsidianVaultStore implements VaultStore {
     const normalized = normalizePath(path);
     await this.ensureParent(normalized);
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    if (isEmptyDirectoryMarker(normalized)) {
+      await this.app.vault.adapter.writeBinary(normalized, buffer);
+      return;
+    }
     const file = this.app.vault.getAbstractFileByPath(normalized);
     if (file instanceof TFile) {
       await this.app.vault.modifyBinary(file, buffer);
@@ -77,6 +88,10 @@ export class ObsidianVaultStore implements VaultStore {
 
   async remove(path: string): Promise<void> {
     const normalized = normalizePath(path);
+    if (isEmptyDirectoryMarker(normalized)) {
+      await removeEmptyDirectoryMarker(this.app.vault.adapter, normalized);
+      return;
+    }
     const file = this.app.vault.getAbstractFileByPath(normalized);
     if (file instanceof TFile) {
       await this.app.fileManager.trashFile(file);

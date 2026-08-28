@@ -9,6 +9,7 @@ Constellation Sync is an Obsidian community plugin for synchronizing multiple va
 - The branch name is the vault's shared English name, such as `work-notes`.
 - `.constellation-sync/vault.json` stores a stable `vaultId`, so devices can follow branch renames safely.
 - The default branch is only a repository landing page and is never used as a vault branch.
+- Visible empty directories are represented by an internal `.constellation-sync-empty-folder` marker, allowing GitHub and other devices to reconstruct the complete vault folder structure.
 
 ## Security
 
@@ -37,7 +38,7 @@ The GitHub App needs only repository Contents read/write permission. Enable Devi
 
 ## Status
 
-Version `0.1.2` is the first implementation milestone with the Community Plugin automated-review fixes. Live OAuth integration uses a public GitHub App Client ID; no client secret is embedded in the plugin.
+Version `0.1.3` preserves the complete visible vault structure, including empty directories, across desktop and mobile devices. Live OAuth integration uses a public GitHub App Client ID; no client secret is embedded in the plugin.
 
 ## 中文说明
 
@@ -50,6 +51,7 @@ Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 私有仓库�
 - 分支名使用笔记库的共享英文名，例如 `work-notes`。
 - `.constellation-sync/vault.json` 保存稳定的 `vaultId`，因此分支改名后其他设备仍能跟随。
 - 默认分支只作为仓库入口，不用于存放笔记库数据。
+- 可见空目录会使用内部隐藏文件 `.constellation-sync-empty-folder` 表示，使 GitHub 和其他设备能够完整还原笔记库目录结构；目录中出现真实文件后，标记会自动移除。
 
 ### 同步规则
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3 — Complete vault structure synchronization
+
+- Preserve visible empty directories across Windows, macOS and mobile devices with internal hidden marker files.
+- Remove stale markers when a directory gains content, and prune empty directory chains when a remote directory is deleted.
+- Keep hidden Obsidian configuration directories and user-ignored paths outside empty-directory preservation.
+
 ## 0.1.2 — Settings heading review fix
 
 - Use a generic settings heading so the tab remains consistent with the Community Plugin UI guidance.

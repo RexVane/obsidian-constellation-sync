@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CommitChanges } from "../src/github/github-client";
 import { SyncEngine, type SyncGithubPort } from "../src/sync/engine";
+import { EMPTY_DIRECTORY_MARKER } from "../src/sync/empty-directories";
 import type { LocalScan, VaultStore } from "../src/sync/vault-store";
 import type { RepositoryBinding, SnapshotManifest, SyncPolicy } from "../src/types";
 import { DEFAULT_POLICY } from "../src/settings";
@@ -65,6 +66,32 @@ const binding: RepositoryBinding = { repository, vaultId: "vault", branch: "work
 const policy: SyncPolicy = structuredClone(DEFAULT_POLICY);
 
 describe("sync engine", () => {
+  it("downloads an empty-directory marker when another device created the folder", async () => {
+    const marker = `empty-folder/${EMPTY_DIRECTORY_MARKER}`;
+    const vault = new MemoryVault();
+    const github = new MemoryGitHub(new Map([[marker, new Uint8Array()]]));
+    const engine = new SyncEngine(github, vault);
+    const initialBinding: RepositoryBinding = {
+      repository,
+      vaultId: "vault",
+      branch: "work-notes",
+      boundAt: new Date().toISOString()
+    };
+
+    const plan = await engine.createPlan(initialBinding, policy, {});
+    expect(plan.summary.downloads).toBe(1);
+    const execution = await engine.execute(
+      initialBinding,
+      policy,
+      plan,
+      { planId: plan.id, confirmInitialMerge: true, confirmMassDeletion: false, confirmLargeFiles: false },
+      "laptop"
+    );
+
+    expect(vault.files.has(marker)).toBe(true);
+    expect(execution.manifest[marker]).toBeDefined();
+  });
+
   it("uploads local additions and refreshes the base manifest", async () => {
     const vault = new MemoryVault(new Map([["local.md", new TextEncoder().encode("local")]]));
     const github = new MemoryGitHub();

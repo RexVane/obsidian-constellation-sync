@@ -10,7 +10,7 @@ on:
       tag:
         description: Release tag to build and upload
         required: true
-        default: 0.1.2
+        default: 0.1.3
       source_ref:
         description: Git ref containing the source to build
         required: true
