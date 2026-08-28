@@ -37,7 +37,7 @@ The GitHub App needs only repository Contents read/write permission. Enable Devi
 
 ## Status
 
-Version `0.1.1` is the first implementation milestone with the Community Plugin automated-review fixes. Live OAuth integration uses a public GitHub App Client ID; no client secret is embedded in the plugin.
+Version `0.1.2` is the first implementation milestone with the Community Plugin automated-review fixes. Live OAuth integration uses a public GitHub App Client ID; no client secret is embedded in the plugin.
 
 ## 中文说明
 

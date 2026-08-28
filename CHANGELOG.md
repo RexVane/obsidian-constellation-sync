@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2 — Settings heading review fix
+
+- Use a generic settings heading so the tab remains consistent with the Community Plugin UI guidance.
+
 ## 0.1.1 — Community review fixes
 
 - Use Obsidian platform and vault configuration APIs instead of browser or hardcoded platform paths.

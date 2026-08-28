@@ -16,7 +16,7 @@ export class ConstellationSettingTab extends PluginSettingTab {
     return [
       {
         type: "group",
-        heading: "Constellation Sync",
+        heading: t("settings"),
         items: [
           {
             name: t("overview"),
@@ -65,7 +65,7 @@ export class ConstellationSettingTab extends PluginSettingTab {
     const snapshot = this.controller.snapshot();
     const t = translator(snapshot.settings.locale);
     containerEl.empty();
-    new Setting(containerEl).setName("Constellation Sync").setHeading();
+    new Setting(containerEl).setName(t("settings")).setHeading();
 
     new Setting(containerEl)
       .setName(t("overview"))
