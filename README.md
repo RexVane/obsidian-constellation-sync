@@ -9,6 +9,12 @@
 
 Constellation Sync is an Obsidian community plugin for synchronizing multiple vaults through independent branches in one private GitHub repository.
 
+## Screenshots
+
+![Overview dashboard](docs/images/dashboard-overview.png)
+
+![Settings](docs/images/dashboard-settings.png)
+
 ## Install
 
 1. **From Obsidian** — Community plugins → Browse → search for "Constellation Sync" (available once the plugin is listed).

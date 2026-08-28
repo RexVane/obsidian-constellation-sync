@@ -9,6 +9,12 @@
 
 Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 私有仓库在多台设备之间同步笔记。一个私有仓库可以承载多个笔记库，每个笔记库使用一个独立的 GitHub 分支。
 
+## 截图
+
+![概览仪表盘](docs/images/dashboard-overview.png)
+
+![设置页](docs/images/dashboard-settings.png)
+
 ## 安装
 
 1. **从 Obsidian 内** — 第三方插件 → 浏览 → 搜索 "Constellation Sync"（插件上架后可用）。
