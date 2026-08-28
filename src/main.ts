@@ -268,16 +268,18 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   private async joinVaultInternal(repository: RepositoryRef, vault: RemoteVaultSummary): Promise<void> {
     if (!repository.private) throw new Error("Constellation Sync refuses public repositories.");
     if (this.settings.binding) throw new Error("This Obsidian vault is already bound to a GitHub branch.");
+    const canonical = await this.github.findVaultById(repository, vault.metadata.vaultId);
+    if (!canonical) throw new Error("The selected vault branch no longer exists.");
     this.settings.binding = {
       repository,
-      vaultId: vault.metadata.vaultId,
-      branch: vault.branch.name,
+      vaultId: canonical.metadata.vaultId,
+      branch: canonical.branch.name,
       boundAt: new Date().toISOString()
     };
-    this.settings.policy = structuredClone(vault.metadata.syncPolicy);
+    this.settings.policy = structuredClone(canonical.metadata.syncPolicy);
     this.settings.baseManifest = {};
     delete this.settings.pendingReview;
-    this.addActivity("bind", `Joined vault branch ${vault.branch.name}`);
+    this.addActivity("bind", `Joined vault branch ${canonical.branch.name}`);
     await this.saveSettings();
     await this.performSync();
   }

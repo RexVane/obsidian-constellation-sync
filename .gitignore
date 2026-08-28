@@ -5,8 +5,6 @@ coverage/
 .env.local
 .env.*.local
 .obsidian/
-.codex-plugin/
-.github/workflows/ci.yml
 data.json
 data.json.*
 .DS_Store

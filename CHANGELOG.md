@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4 — Canonical vault branch selection
+
+- Deduplicate branches that carry the same stable `vaultId` and prefer the branch whose actual name matches the shared vault metadata.
+- Display actual GitHub branch names in the join list instead of potentially stale metadata labels.
+- Resolve the canonical branch again when joining, preventing an old duplicate branch from being selected from a stale screen.
+- Add continuous integration checks for every push and pull request.
+
 ## 0.1.3 — Complete vault structure synchronization
 
 - Preserve visible empty directories across Windows, macOS and mobile devices with internal hidden marker files.

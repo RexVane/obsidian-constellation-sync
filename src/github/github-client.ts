@@ -167,7 +167,7 @@ export class GitHubClient {
       );
       results.push(...found.filter((item): item is RemoteVaultSummary => item !== null));
     }
-    return results;
+    return selectCanonicalVaults(results);
   }
 
   async findVaultById(repository: RepositoryRef, vaultId: string): Promise<RemoteVaultSummary | null> {
@@ -465,6 +465,26 @@ export class GitHubClient {
     this.rateLimitRemaining = remaining === undefined ? this.rateLimitRemaining : Number(remaining);
     this.rateLimitResetAt = reset === undefined ? this.rateLimitResetAt : Number(reset) * 1000;
   }
+}
+
+export function selectCanonicalVaults(vaults: RemoteVaultSummary[]): RemoteVaultSummary[] {
+  const byVaultId = new Map<string, RemoteVaultSummary>();
+  for (const vault of vaults) {
+    const current = byVaultId.get(vault.metadata.vaultId);
+    if (!current || isPreferredVaultBranch(vault, current)) byVaultId.set(vault.metadata.vaultId, vault);
+  }
+  return [...byVaultId.values()].sort((left, right) => left.branch.name.localeCompare(right.branch.name, "en-US"));
+}
+
+function isPreferredVaultBranch(candidate: RemoteVaultSummary, current: RemoteVaultSummary): boolean {
+  const candidateMatchesMetadata = candidate.branch.name === candidate.metadata.englishName;
+  const currentMatchesMetadata = current.branch.name === current.metadata.englishName;
+  if (candidateMatchesMetadata !== currentMatchesMetadata) return candidateMatchesMetadata;
+
+  const candidateUpdatedAt = Date.parse(candidate.metadata.updatedAt) || 0;
+  const currentUpdatedAt = Date.parse(current.metadata.updatedAt) || 0;
+  if (candidateUpdatedAt !== currentUpdatedAt) return candidateUpdatedAt > currentUpdatedAt;
+  return candidate.branch.name.localeCompare(current.branch.name, "en-US") < 0;
 }
 
 function repoPath(repository: RepositoryRef): string {

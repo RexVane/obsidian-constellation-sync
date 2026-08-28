@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { RequestUrlParam, RequestUrlResponse } from "obsidian";
 import type { GitHubAuth } from "../src/auth/github-auth";
-import { GitHubClient } from "../src/github/github-client";
-import type { RepositoryRef, VaultMetadata } from "../src/types";
+import { GitHubClient, selectCanonicalVaults } from "../src/github/github-client";
+import type { RemoteVaultSummary, RepositoryRef, VaultMetadata } from "../src/types";
 
 const repository: RepositoryRef = { id: 10, nodeId: "node", owner: "owner", name: "notes", fullName: "owner/notes", private: true, defaultBranch: "main" };
 
@@ -16,6 +16,32 @@ function parseBody(request: RequestUrlParam | undefined): Record<string, unknown
 }
 
 describe("GitHub client request contracts", () => {
+  it("deduplicates a vault identity and prefers the branch named by its metadata", () => {
+    const metadata: VaultMetadata = {
+      schemaVersion: 1,
+      vaultId: "shared-vault",
+      englishName: "obsidian-data",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      policyRevision: 1,
+      syncPolicy: {
+        obsidian: { coreSettings: false, themesAndSnippets: false, communityPluginData: [] },
+        ignorePatterns: []
+      }
+    };
+    const duplicate: RemoteVaultSummary = {
+      branch: { name: "obsidian-vault", protected: false, headOid: "old-head" },
+      metadata
+    };
+    const canonical: RemoteVaultSummary = {
+      branch: { name: "obsidian-data", protected: false, headOid: "current-head" },
+      metadata
+    };
+
+    expect(selectCanonicalVaults([duplicate, canonical])).toEqual([canonical]);
+    expect(selectCanonicalVaults([canonical, duplicate])).toEqual([canonical]);
+  });
+
   it("renames a branch through the non-administration branch endpoint", async () => {
     const requests: RequestUrlParam[] = [];
     const client = new GitHubClient({ getValidAccessToken: () => Promise.resolve("token") } as GitHubAuth, (request) => {

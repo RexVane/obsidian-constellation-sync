@@ -196,7 +196,7 @@ function VaultSetup(props: PanelProps): preact.JSX.Element {
                 {snapshot.remoteVaults.map((vault) => (
                   <div class="cs-list-row">
                     <Icon name="git-branch" />
-                    <span><strong>{vault.metadata.englishName}</strong><small>{vault.metadata.vaultId.slice(0, 8)}</small></span>
+                    <span><strong>{vault.branch.name}</strong><small>{vault.metadata.vaultId.slice(0, 8)}</small></span>
                     <button class="cs-button" onClick={() => void run(() => controller.joinVault(selected, vault))}>{t("joinVault")}</button>
                   </div>
                 ))}
