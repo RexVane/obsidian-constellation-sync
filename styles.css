@@ -558,29 +558,63 @@
 .cs-setting-row select { width: auto; min-width: 150px; }
 .cs-inline-field { display: flex; gap: 6px; width: min(320px, 60%); }
 
-.cs-switch {
+/* Obsidian styles bare input[type="checkbox"] as an accent circle with a
+   masked checkmark. That attribute selector outweighs a lone class, so the
+   pill has to be scoped and qualified to win, and the core marker explicitly
+   cleared -- otherwise its checkmark survives and inherits the knob's slide.
+   Track and thumb colours follow Obsidian's own toggle so the row matches the
+   surrounding app in any theme. */
+.constellation-sync input.cs-switch[type="checkbox"] {
   appearance: none;
+  -webkit-appearance: none;
   position: relative;
-  width: 34px;
-  height: 18px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 20px;
+  padding: 0;
   margin: 0;
-  border: 1px solid var(--cs-border-strong);
+  border: 0;
   border-radius: 999px;
-  background: var(--cs-panel-hover);
+  background-color: var(--background-modifier-border-hover, var(--cs-border-strong));
+  background-image: none;
+  box-shadow: none;
+  cursor: pointer;
+  transition: background-color 150ms ease;
 }
-.cs-switch::after {
+.constellation-sync input.cs-switch[type="checkbox"]:hover {
+  background-color: color-mix(in srgb, var(--cs-violet) 30%, var(--background-modifier-border-hover, var(--cs-border-strong)));
+}
+.constellation-sync input.cs-switch[type="checkbox"]::before { content: none; }
+.constellation-sync input.cs-switch[type="checkbox"]::after,
+.constellation-sync input.cs-switch[type="checkbox"]:checked::after {
   content: "";
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
+  top: 50%;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
-  background: var(--cs-muted);
-  transition: transform 150ms ease, background 150ms ease;
+  background-color: var(--toggle-thumb-color, #fff);
+  background-image: none;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 30%);
+  -webkit-mask-image: none;
+  mask-image: none;
+  transform: translateY(-50%);
+  transition: transform 150ms ease;
 }
-.cs-switch:checked { background: color-mix(in srgb, var(--cs-violet) 45%, var(--cs-panel)); }
-.cs-switch:checked::after { background: white; transform: translateX(16px); }
+.constellation-sync input.cs-switch[type="checkbox"]:checked {
+  background-color: var(--interactive-accent, var(--cs-violet));
+}
+.constellation-sync input.cs-switch[type="checkbox"]:checked:hover {
+  background-color: var(--interactive-accent-hover, var(--cs-violet-strong));
+}
+.constellation-sync input.cs-switch[type="checkbox"]:checked::after {
+  transform: translate(16px, -50%);
+}
 
 .cs-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--cs-gap); }
 .cs-danger-zone { border-color: color-mix(in srgb, var(--cs-danger) 23%, var(--cs-border)); }
@@ -596,7 +630,8 @@
 .cs-field input:focus-visible,
 .cs-field textarea:focus-visible,
 .cs-setting-row input:focus-visible,
-.cs-setting-row select:focus-visible {
+.cs-setting-row select:focus-visible,
+.constellation-sync input.cs-switch[type="checkbox"]:focus-visible {
   outline: 2px solid var(--cs-violet);
   outline-offset: 2px;
 }
