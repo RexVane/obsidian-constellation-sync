@@ -9,3 +9,6 @@ data.json
 data.json.*
 .DS_Store
 Thumbs.db
+
+# Session artifacts from local agent tooling
+.zcode/
