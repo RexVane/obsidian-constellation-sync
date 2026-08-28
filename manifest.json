@@ -1,0 +1,9 @@
+{
+  "id": "constellation-sync",
+  "name": "Constellation Sync",
+  "version": "0.1.0",
+  "minAppVersion": "1.11.4",
+  "description": "Synchronize multiple Obsidian vaults through branches in a private GitHub repository.",
+  "author": "Constellation Sync Contributors",
+  "isDesktopOnly": false
+}

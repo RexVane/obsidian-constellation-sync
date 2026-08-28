@@ -1,0 +1,37 @@
+{
+  "name": "obsidian-constellation-sync",
+  "version": "0.1.0",
+  "description": "Multi-device Obsidian vault synchronization through branches in a private GitHub repository.",
+  "type": "module",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run build"
+  },
+  "keywords": [
+    "obsidian",
+    "github",
+    "sync",
+    "vault"
+  ],
+  "author": "Constellation Sync Contributors",
+  "license": "MIT",
+  "dependencies": {
+    "preact": "^10.26.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "@types/node": "^22.13.4",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.20.1",
+    "globals": "^16.0.0",
+    "obsidian": "latest",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.24.0",
+    "vitest": "^3.0.5"
+  }
+}
