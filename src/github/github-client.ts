@@ -517,5 +517,6 @@ async function waitForRetry(response: RequestUrlResponse, attempt: number): Prom
   const resetAt = Number(response.headers["x-ratelimit-reset"] ?? "") * 1000;
   const resetDelay = Number.isFinite(resetAt) && resetAt > Date.now() ? resetAt - Date.now() : 0;
   const delay = Math.min(30_000, Math.max(1000, Number.isFinite(retryAfter) ? retryAfter * 1000 : resetDelay || 2 ** attempt * 1000));
-  await new Promise<void>((resolve) => setTimeout(resolve, delay));
+  // Qualified for popout windows, as above.
+  await new Promise<void>((resolve) => window.setTimeout(resolve, delay));
 }

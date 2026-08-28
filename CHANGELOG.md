@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7 — Popout window timer compatibility
+
+- Schedule the device-flow poll and the request backoff through `window.setTimeout` and `window.clearTimeout` again. A popout window has its own timer scope, so the bare globals introduced in 0.1.5 resolve against the wrong window.
+
 ## 0.1.6 — Settings toggles render as toggles
 
 - Scope and qualify the switch selectors so they outrank Obsidian's rules for a bare `input[type="checkbox"]`. The attribute selector had been winning, so a checked row drew Obsidian's accent circle while the plugin's transform dragged its checkmark outside the control.

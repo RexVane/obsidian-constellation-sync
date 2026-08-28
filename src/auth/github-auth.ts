@@ -197,11 +197,13 @@ function sleep(milliseconds: number, signal?: AbortSignal): Promise<void> {
       reject(new DOMException("Aborted", "AbortError"));
       return;
     }
-    const timer = setTimeout(resolve, milliseconds);
+    // window.setTimeout, not the bare global: a popout window has its own timer
+    // scope, and Obsidian's plugin review requires the qualified form.
+    const timer = window.setTimeout(resolve, milliseconds);
     signal?.addEventListener(
       "abort",
       () => {
-        clearTimeout(timer);
+        window.clearTimeout(timer);
         reject(new DOMException("Aborted", "AbortError"));
       },
       { once: true }
