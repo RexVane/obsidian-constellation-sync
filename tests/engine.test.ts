@@ -8,6 +8,7 @@ import { DEFAULT_POLICY } from "../src/settings";
 import { gitBlobOid } from "../src/utils/hash";
 
 class MemoryVault implements VaultStore {
+  readonly blocked: string[] = [];
   constructor(readonly files = new Map<string, Uint8Array>()) {}
 
   configDir(): string {
@@ -17,7 +18,7 @@ class MemoryVault implements VaultStore {
   async scan(): Promise<LocalScan> {
     const manifest: SnapshotManifest = {};
     for (const [path, bytes] of this.files) manifest[path] = { path, oid: await gitBlobOid(bytes), size: bytes.length };
-    return { manifest, blockedPaths: [] };
+    return { manifest, blockedPaths: [...this.blocked] };
   }
 
   read(path: string): Promise<Uint8Array> {
@@ -33,6 +34,7 @@ class MemoryVault implements VaultStore {
 
 class MemoryGitHub implements SyncGithubPort {
   head = "head-1";
+  failCommit = false;
   constructor(readonly files = new Map<string, Uint8Array>(), readonly historical = new Map<string, Uint8Array>()) {}
 
   async getSnapshot(): Promise<{ headOid: string; manifest: SnapshotManifest }> {
@@ -49,6 +51,7 @@ class MemoryGitHub implements SyncGithubPort {
   }
 
   createCommitOnBranch(_repository: RepositoryBinding["repository"], _branch: string, expected: string, _message: string, changes: CommitChanges): Promise<string> {
+    if (this.failCommit) throw new Error("network down during commit");
     if (expected !== this.head) throw new Error("head mismatch");
     for (const addition of changes.additions) this.files.set(addition.path, addition.bytes);
     for (const path of changes.deletions) this.files.delete(path);
@@ -101,6 +104,43 @@ describe("sync engine", () => {
     expect(github.files.has("local.md")).toBe(true);
     expect(execution.manifest["local.md"]).toBeDefined();
     expect(execution.baseCommitOid).toContain("next");
+  });
+
+  it("leaves the vault untouched when the commit fails mid-run", async () => {
+    const baseBytes = new TextEncoder().encode("one\ntwo\nthree");
+    const localBytes = new TextEncoder().encode("one\nLOCAL\nthree");
+    const remoteBytes = new TextEncoder().encode("one\nREMOTE\nthree");
+    const baseOid = await gitBlobOid(baseBytes);
+    const vault = new MemoryVault(new Map([["note.md", localBytes]]));
+    const github = new MemoryGitHub(new Map([["note.md", remoteBytes]]), new Map([["base", baseBytes]]));
+    const engine = new SyncEngine(github, vault);
+    const plan = await engine.createPlan(binding, policy, { "note.md": { path: "note.md", oid: baseOid, size: baseBytes.length } });
+
+    github.failCommit = true;
+    await expect(
+      engine.execute(binding, policy, plan, { planId: plan.id, confirmInitialMerge: false, confirmMassDeletion: false, confirmLargeFiles: false }, "laptop")
+    ).rejects.toThrow(/network down/);
+
+    // A conflict copy that nobody recorded is worse than no copy at all, so the
+    // run must be fully replayable: local edits intact, no orphaned files.
+    expect([...vault.files.keys()]).toEqual(["note.md"]);
+    expect(new TextDecoder().decode(vault.files.get("note.md"))).toBe("one\nLOCAL\nthree");
+  });
+
+  it("synchronizes the rest of the vault when one path cannot be stored portably", async () => {
+    const unportable = "Notes/Meeting: agenda.md";
+    const vault = new MemoryVault(new Map([[unportable, new TextEncoder().encode("bad")], ["fine.md", new TextEncoder().encode("good")]]));
+    vault.blocked.push(unportable);
+    const github = new MemoryGitHub();
+    const engine = new SyncEngine(github, vault);
+    const plan = await engine.createPlan(binding, policy, {});
+    expect(plan.blockedFiles).toEqual([unportable]);
+
+    const execution = await engine.execute(binding, policy, plan, { planId: plan.id, confirmInitialMerge: true, confirmMassDeletion: false, confirmLargeFiles: false }, "laptop");
+
+    expect(execution.result.kind).toBe("success");
+    expect(github.files.has("fine.md")).toBe(true);
+    expect(github.files.has(unportable)).toBe(false);
   });
 
   it("preserves local content in a conflict copy when text edits overlap", async () => {

@@ -237,7 +237,7 @@ function Overview({ snapshot, controller, run, t }: PanelProps): preact.JSX.Elem
           {pending.blockedFiles.length > 0 ? <PathList title={t("blocked")} paths={pending.blockedFiles} /> : null}
           {pending.largeFileWarnings.length > 0 ? <PathList title={t("warnings")} paths={pending.largeFileWarnings} /> : null}
           <div class="cs-actions">
-            <button class="cs-button cs-button-primary" disabled={pending.blockedFiles.length > 0 || busy(snapshot)} onClick={() => void run(() => controller.approvePendingSync())}>{t("confirmSync")}</button>
+            <button class="cs-button cs-button-primary" disabled={busy(snapshot)} onClick={() => void run(() => controller.approvePendingSync())}>{t("confirmSync")}</button>
             <button class="cs-button" onClick={() => void run(() => controller.cancelPendingSync())}>{t("cancelPlan")}</button>
           </div>
         </section>
@@ -247,6 +247,12 @@ function Overview({ snapshot, controller, run, t }: PanelProps): preact.JSX.Elem
           <button class="cs-button cs-button-primary cs-button-large" disabled={busy(snapshot)} onClick={() => void run(() => controller.syncNow())}><Icon name="refresh-cw" /> {t("syncNow")}</button>
         </section>
       )}
+      {snapshot.settings.skippedFiles.length > 0 ? (
+        <section class="cs-card">
+          <div class="cs-alert is-warning"><Icon name="triangle-alert" /><span>{t("skippedHelp")}</span></div>
+          <PathList title={t("skippedTitle")} paths={snapshot.settings.skippedFiles} />
+        </section>
+      ) : null}
       <section class="cs-card"><div class="cs-card-header"><div><p class="cs-kicker">Recent</p><h2>{t("history")}</h2></div></div><ActivityList snapshot={snapshot} t={t} limit={8} /></section>
     </div>
   );
@@ -321,6 +327,7 @@ function SettingsPage({ snapshot, controller, run, t }: PanelProps): preact.JSX.
   const settings = snapshot.settings;
   const [deviceName, setDeviceName] = useState(settings.deviceName);
   const [ignores, setIgnores] = useState(settings.policy.ignorePatterns.join("\n"));
+  const [plugins, setPlugins] = useState(settings.policy.obsidian.communityPluginData.join("\n"));
   return (
     <div class="cs-stack">
       <section class="cs-card cs-settings-list">
@@ -332,6 +339,7 @@ function SettingsPage({ snapshot, controller, run, t }: PanelProps): preact.JSX.
         <label class="cs-setting-row"><span><strong>{t("deviceName")}</strong></span><div class="cs-inline-field"><input value={deviceName} onInput={(event) => setDeviceName(event.currentTarget.value)} /><button class="cs-button" onClick={() => void run(() => controller.updatePreference("deviceName", deviceName))}>{t("save")}</button></div></label>
       </section>
       <section class="cs-card"><label class="cs-field"><span>{t("ignores")}</span><textarea rows={8} value={ignores} onInput={(event) => setIgnores(event.currentTarget.value)} /><small>{t("ignoresHelp")}</small></label><button class="cs-button cs-button-primary" onClick={() => void run(() => controller.updateIgnorePatterns(ignores))}>{t("save")}</button></section>
+      <section class="cs-card"><label class="cs-field"><span>{t("communityPlugins")}</span><textarea rows={5} value={plugins} placeholder="dataview" onInput={(event) => setPlugins(event.currentTarget.value)} /><small>{t("communityPluginsHelp")}</small></label><button class="cs-button cs-button-primary" onClick={() => void run(() => controller.updateCommunityPluginData(plugins.split(/\r?\n/)))}>{t("save")}</button></section>
       <section class="cs-card cs-danger-zone"><p class="cs-kicker">{t("danger")}</p><div class="cs-actions"><button class="cs-button" disabled={!settings.binding} onClick={() => void run(() => controller.disconnectVault())}>{t("disconnect")}</button><button class="cs-button is-danger" disabled={!settings.account} onClick={() => void run(() => controller.signOut())}>{t("signOut")}</button></div></section>
     </div>
   );

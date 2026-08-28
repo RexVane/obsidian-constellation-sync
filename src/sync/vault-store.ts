@@ -22,7 +22,18 @@ export interface VaultStore {
   exists(path: string): Promise<boolean>;
 }
 
+interface CachedOid {
+  mtime: number;
+  size: number;
+  oid: string;
+}
+
 export class ObsidianVaultStore implements VaultStore {
+  // Hashing every byte of the vault on each scan is the dominant cost of an
+  // automatic sync, and most files are untouched between runs. Keyed on
+  // mtime and size, so any edit still forces a rehash.
+  private readonly oidCache = new Map<string, CachedOid>();
+
   constructor(private readonly app: App) {}
 
   configDir(): string {
@@ -55,10 +66,42 @@ export class ObsidianVaultStore implements VaultStore {
 
     const manifest: SnapshotManifest = {};
     for (const path of [...paths].sort()) {
-      const bytes = await this.read(path);
-      manifest[path] = { path, oid: await gitBlobOid(bytes), size: bytes.byteLength };
+      manifest[path] = await this.entryFor(path);
+    }
+    for (const path of [...this.oidCache.keys()]) {
+      if (!paths.has(path)) this.oidCache.delete(path);
     }
     return { manifest, blockedPaths: [...new Set(blockedPaths)].sort() };
+  }
+
+  private async entryFor(path: string): Promise<SnapshotManifest[string]> {
+    const stat = await this.statOf(path);
+    if (stat) {
+      const cached = this.oidCache.get(path);
+      if (cached && cached.mtime === stat.mtime && cached.size === stat.size) {
+        return { path, oid: cached.oid, size: cached.size };
+      }
+    }
+    const bytes = await this.read(path);
+    const oid = await gitBlobOid(bytes);
+    if (stat && stat.size === bytes.byteLength) {
+      this.oidCache.set(path, { mtime: stat.mtime, size: bytes.byteLength, oid });
+    } else {
+      this.oidCache.delete(path);
+    }
+    return { path, oid, size: bytes.byteLength };
+  }
+
+  private async statOf(path: string): Promise<{ mtime: number; size: number } | null> {
+    const normalized = normalizePath(path);
+    const file = this.app.vault.getAbstractFileByPath(normalized);
+    if (file instanceof TFile) return { mtime: file.stat.mtime, size: file.stat.size };
+    try {
+      const stat = await this.app.vault.adapter.stat(normalized);
+      return stat && stat.type === "file" ? { mtime: stat.mtime, size: stat.size } : null;
+    } catch {
+      return null;
+    }
   }
 
   async read(path: string): Promise<Uint8Array> {
@@ -70,6 +113,7 @@ export class ObsidianVaultStore implements VaultStore {
 
   async write(path: string, bytes: Uint8Array): Promise<void> {
     const normalized = normalizePath(path);
+    this.oidCache.delete(normalized);
     await this.ensureParent(normalized);
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     if (isEmptyDirectoryMarker(normalized)) {
@@ -88,6 +132,7 @@ export class ObsidianVaultStore implements VaultStore {
 
   async remove(path: string): Promise<void> {
     const normalized = normalizePath(path);
+    this.oidCache.delete(normalized);
     if (isEmptyDirectoryMarker(normalized)) {
       await removeEmptyDirectoryMarker(this.app.vault.adapter, normalized);
       return;

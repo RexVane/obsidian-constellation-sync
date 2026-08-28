@@ -24,7 +24,8 @@ export function createDefaultSettings(): PluginSettings {
     policy: structuredClone(DEFAULT_POLICY),
     baseManifest: {},
     conflicts: [],
-    activity: []
+    activity: [],
+    skippedFiles: []
   };
 }
 
@@ -52,7 +53,10 @@ export function loadSettings(raw: unknown): PluginSettings {
     },
     baseManifest: value.baseManifest ?? {},
     conflicts: Array.isArray(value.conflicts) ? value.conflicts.slice(-200) : [],
-    activity: Array.isArray(value.activity) ? value.activity.slice(-500) : []
+    activity: Array.isArray(value.activity) ? value.activity.slice(-500) : [],
+    skippedFiles: Array.isArray(value.skippedFiles)
+      ? value.skippedFiles.filter((item): item is string => typeof item === "string")
+      : []
   };
 }
 

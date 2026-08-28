@@ -185,6 +185,8 @@ export interface PluginSettings {
   pendingReview?: PendingReview;
   conflicts: ConflictRecord[];
   activity: ActivityRecord[];
+  /** Paths the last run left untouched because they cannot sync safely everywhere. */
+  skippedFiles: string[];
   lastSuccessAt?: string;
 }
 

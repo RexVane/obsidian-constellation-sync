@@ -39,7 +39,7 @@ The GitHub App needs only repository Contents read/write permission. Enable Devi
 
 ## Status
 
-Version `0.1.4` preserves the complete visible vault structure and prevents devices from joining stale duplicate branches for the same `vaultId`. Live OAuth integration uses a public GitHub App Client ID; no client secret is embedded in the plugin.
+Version `0.1.5` makes a failed push leave the vault untouched, keeps one unportable filename from stalling the whole vault, and requires an explicit choice before a device binds to a vault branch. Live OAuth integration uses a public GitHub App Client ID; no client secret is embedded in the plugin.
 
 ## 中文说明
 

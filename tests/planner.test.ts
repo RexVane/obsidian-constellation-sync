@@ -37,6 +37,23 @@ describe("sync planner", () => {
     expect(plan.summary.remoteDeletes).toBe(80);
   });
 
+  it("skips an unportable path without holding back the rest of the vault", async () => {
+    const plan = await buildSyncPlan({
+      remoteHeadOid: "head",
+      baseCommitOid: "base",
+      base: {},
+      local: {
+        "Notes/Meeting: agenda.md": entry("Notes/Meeting: agenda.md", "bad"),
+        "Notes/fine.md": entry("Notes/fine.md", "good")
+      },
+      remote: {},
+      blockedPaths: ["Notes/Meeting: agenda.md"]
+    });
+    expect(plan.blockedFiles).toEqual(["Notes/Meeting: agenda.md"]);
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]).toMatchObject({ kind: "upload", path: "Notes/fine.md" });
+  });
+
   it("blocks regular Git files at 100 MiB and warns at 50 MiB", async () => {
     const plan = await buildSyncPlan({
       remoteHeadOid: "head",

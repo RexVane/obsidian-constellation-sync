@@ -78,6 +78,20 @@ describe("GitHub client request contracts", () => {
     expect(requests[2]?.url).toContain("/git/trees/tree?recursive=1");
   });
 
+  it("reports a missing vault marker as null instead of throwing", async () => {
+    const client = new GitHubClient({ getValidAccessToken: () => Promise.resolve("token") } as GitHubAuth, () =>
+      Promise.resolve(response({ message: "Not Found" }, 404))
+    );
+    await expect(client.getVaultMetadata(repository, "work-notes")).resolves.toBeNull();
+  });
+
+  it("still surfaces non-404 failures from the vault marker request", async () => {
+    const client = new GitHubClient({ getValidAccessToken: () => Promise.resolve("token") } as GitHubAuth, () =>
+      Promise.resolve(response({ message: "Bad credentials" }, 401))
+    );
+    await expect(client.getVaultMetadata(repository, "work-notes")).rejects.toThrow(/Bad credentials/);
+  });
+
   it("bootstraps an empty repository before creating the vault branch", async () => {
     const requests: RequestUrlParam[] = [];
     const queue = [

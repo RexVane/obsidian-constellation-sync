@@ -175,11 +175,19 @@ export class GitHubClient {
   }
 
   async getVaultMetadata(repository: RepositoryRef, branch: string): Promise<VaultMetadata | null> {
-    const response = await this.api<{
-      type: string;
-      content?: string;
-      encoding?: string;
-    }>(`${repoPath(repository)}/contents/${VAULT_META_PATH}?ref=${encodeURIComponent(branch)}`);
+    // A branch without a marker is an ordinary answer, not a failure: every
+    // caller already branches on null, so a 404 must not surface as an error.
+    let response: { type: string; content?: string; encoding?: string };
+    try {
+      response = await this.api<{
+        type: string;
+        content?: string;
+        encoding?: string;
+      }>(`${repoPath(repository)}/contents/${VAULT_META_PATH}?ref=${encodeURIComponent(branch)}`);
+    } catch (error) {
+      if (error instanceof GitHubApiError && error.status === 404) return null;
+      throw error;
+    }
     if (response.type !== "file" || response.encoding !== "base64" || !response.content) return null;
     const text = decodeUtf8(base64ToBytes(response.content));
     if (!text) return null;
@@ -509,5 +517,5 @@ async function waitForRetry(response: RequestUrlResponse, attempt: number): Prom
   const resetAt = Number(response.headers["x-ratelimit-reset"] ?? "") * 1000;
   const resetDelay = Number.isFinite(resetAt) && resetAt > Date.now() ? resetAt - Date.now() : 0;
   const delay = Math.min(30_000, Math.max(1000, Number.isFinite(retryAfter) ? retryAfter * 1000 : resetDelay || 2 ** attempt * 1000));
-  await new Promise<void>((resolve) => window.setTimeout(resolve, delay));
+  await new Promise<void>((resolve) => setTimeout(resolve, delay));
 }

@@ -26,6 +26,27 @@ describe("GitHub Device Flow session storage", () => {
     expect(request).toHaveBeenCalledOnce();
   });
 
+  it("redeems a rotating refresh token once when several requests race", async () => {
+    const secrets = new MemorySecrets();
+    secrets.setSecret("constellation-sync-github-session", JSON.stringify({ accessToken: "old", refreshToken: "rotating", expiresAt: Date.now() - 1000, tokenType: "bearer" }));
+    const redeemed: string[] = [];
+    const request = vi.fn((options: { body?: unknown }) => {
+      const used = new URLSearchParams(String(options.body)).get("refresh_token") ?? "";
+      redeemed.push(used);
+      // GitHub invalidates a refresh token the moment it is redeemed.
+      if (redeemed.filter((token) => token === "rotating").length > 1) {
+        return Promise.resolve(response({ error: "bad_refresh_token", error_description: "refresh token already used" }));
+      }
+      return Promise.resolve(response({ access_token: "fresh", token_type: "bearer", expires_in: 3600, refresh_token: "next" }));
+    });
+    const auth = new GitHubAuth(config, secrets, request as never);
+
+    const tokens = await Promise.all([auth.getValidAccessToken(), auth.getValidAccessToken(), auth.getValidAccessToken()]);
+
+    expect(tokens).toEqual(["fresh", "fresh", "fresh"]);
+    expect(redeemed).toEqual(["rotating"]);
+  });
+
   it("does not claim to be configured when the public client ID is missing", () => {
     const auth = new GitHubAuth({ ...config, clientId: "" }, new MemorySecrets());
     expect(auth.isConfigured()).toBe(false);

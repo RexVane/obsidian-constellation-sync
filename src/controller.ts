@@ -47,6 +47,7 @@ export interface DashboardController {
   ): Promise<void>;
   updateObsidianPolicy(key: "coreSettings" | "themesAndSnippets", value: boolean): Promise<void>;
   updateIgnorePatterns(value: string): Promise<void>;
+  updateCommunityPluginData(pluginIds: string[]): Promise<void>;
   disconnectVault(): Promise<void>;
   signOut(): Promise<void>;
 }

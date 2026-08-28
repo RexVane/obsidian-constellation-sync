@@ -33,6 +33,11 @@ export class GitHubAuthError extends Error {
 }
 
 export class GitHubAuth {
+  // GitHub rotates refresh tokens: whoever redeems one invalidates it. Parallel
+  // API calls hitting an expired access token must therefore share a single
+  // refresh, or all but the winner get a dead session and force a re-login.
+  private refreshInFlight: Promise<GitHubSession> | null = null;
+
   constructor(
     readonly config: GitHubAppConfig,
     private readonly secrets: SecretStore,
@@ -129,6 +134,13 @@ export class GitHubAuth {
   }
 
   async refresh(refreshToken: string): Promise<GitHubSession> {
+    this.refreshInFlight ??= this.performRefresh(refreshToken).finally(() => {
+      this.refreshInFlight = null;
+    });
+    return this.refreshInFlight;
+  }
+
+  private async performRefresh(refreshToken: string): Promise<GitHubSession> {
     this.assertConfigured();
     const response = await this.sendRequest({
       url: "https://github.com/login/oauth/access_token",
@@ -185,11 +197,11 @@ function sleep(milliseconds: number, signal?: AbortSignal): Promise<void> {
       reject(new DOMException("Aborted", "AbortError"));
       return;
     }
-    const timer = window.setTimeout(resolve, milliseconds);
+    const timer = setTimeout(resolve, milliseconds);
     signal?.addEventListener(
       "abort",
       () => {
-        window.clearTimeout(timer);
+        clearTimeout(timer);
         reject(new DOMException("Aborted", "AbortError"));
       },
       { once: true }

@@ -20,6 +20,10 @@ const MAX_TEXT_MERGE_BYTES = 2 * 1024 * 1024;
 const GRAPHQL_BATCH_BYTES = 4 * 1024 * 1024;
 const GRAPHQL_BATCH_FILES = 100;
 
+type StagedLocalChange =
+  | { kind: "write"; path: string; bytes: Uint8Array }
+  | { kind: "remove"; path: string };
+
 export interface SyncExecution {
   result: SyncResult;
   manifest: SnapshotManifest;
@@ -42,16 +46,6 @@ export class SyncReviewRequiredError extends Error {
   ) {
     super(message);
     this.name = "SyncReviewRequiredError";
-  }
-}
-
-export class SyncBlockedError extends Error {
-  constructor(
-    message: string,
-    readonly paths: string[]
-  ) {
-    super(message);
-    this.name = "SyncBlockedError";
   }
 }
 
@@ -94,7 +88,6 @@ export class SyncEngine {
     deviceName: string
   ): Promise<SyncExecution> {
     if (approval.planId !== plan.id) throw new SyncReviewRequiredError("The sync preview changed.", plan);
-    if (plan.blockedFiles.length > 0) throw new SyncBlockedError("Some files cannot be synchronized safely.", plan.blockedFiles);
     if (plan.initial && plan.operations.length > 0 && !approval.confirmInitialMerge) {
       throw new SyncReviewRequiredError("Initial merge confirmation is required.", plan);
     }
@@ -109,26 +102,40 @@ export class SyncEngine {
 
     const changes: CommitChanges = { additions: [], deletions: [] };
     const conflicts: ConflictRecord[] = [];
+    // Operations that both rewrite a local file and publish that rewrite are
+    // staged here instead of touching the disk immediately. A failed push must
+    // leave the vault exactly as the user left it, so the whole run stays
+    // replayable rather than half-applied with its conflict records lost.
+    const staged: StagedLocalChange[] = [];
+    const reservedPaths = new Set<string>();
     for (const operation of plan.operations) {
       await this.assertLocalStable(operation);
-      await this.applyOperation(binding, operation, changes, conflicts, deviceName);
+      await this.applyOperation(binding, operation, changes, staged, reservedPaths, conflicts, deviceName);
     }
 
+    const pushed = changes.additions.length > 0 || changes.deletions.length > 0;
     let commitOid = currentHead;
-    if (changes.additions.length > 0 || changes.deletions.length > 0) {
+    if (pushed) {
       commitOid = await this.pushChanges(binding, currentHead, plan.id, deviceName, changes);
     } else if (await this.github.getBranchHead(binding.repository, binding.branch) !== currentHead) {
       throw new SyncChangedDuringRunError("The remote branch changed while local files were being applied.");
     }
+
+    // The remote is durable from here on, so the staged local half can land.
+    for (const change of staged) {
+      if (change.kind === "write") await this.vault.write(change.path, change.bytes);
+      else await this.vault.remove(change.path);
+    }
+
     const refreshed = await this.github.getSnapshot(binding.repository, binding.branch);
-    if (changes.additions.length > 0 || changes.deletions.length > 0) {
-      if (refreshed.headOid !== commitOid) throw new SyncChangedDuringRunError("The remote branch changed while the sync commit was being finalized.");
+    if (pushed && refreshed.headOid !== commitOid) {
+      throw new SyncChangedDuringRunError("The remote branch changed while the sync commit was being finalized.");
     }
     return {
       result: {
         kind: plan.operations.length === 0 ? "noop" : "success",
         plan,
-        commitOid
+        ...(pushed ? { commitOid } : {})
       },
       manifest: filterManifest(refreshed.manifest, policy, this.vault.configDir()),
       baseCommitOid: refreshed.headOid,
@@ -140,6 +147,8 @@ export class SyncEngine {
     binding: RepositoryBinding,
     operation: SyncOperation,
     changes: CommitChanges,
+    staged: StagedLocalChange[],
+    reservedPaths: Set<string>,
     conflicts: ConflictRecord[],
     deviceName: string
   ): Promise<void> {
@@ -147,6 +156,8 @@ export class SyncEngine {
       changes.additions.push({ path: operation.path, bytes: await this.vault.read(operation.path) });
       return;
     }
+    // Download and delete-local publish nothing, so applying them now is safe:
+    // a later failure just leaves work for the next run to redo.
     if (operation.kind === "download") {
       if (!operation.remoteOid) throw new Error(`Missing remote OID for ${operation.path}`);
       await this.vault.write(operation.path, await this.verifiedBlob(binding, operation.remoteOid));
@@ -161,10 +172,10 @@ export class SyncEngine {
       return;
     }
     if (operation.kind === "merge") {
-      await this.mergeOperation(binding, operation, changes, conflicts, deviceName);
+      await this.mergeOperation(binding, operation, changes, staged, reservedPaths, conflicts, deviceName);
       return;
     }
-    await this.conflictOperation(binding, operation, changes, conflicts, deviceName);
+    await this.conflictOperation(binding, operation, changes, staged, reservedPaths, conflicts, deviceName);
   }
 
   private async assertLocalStable(operation: SyncOperation): Promise<void> {
@@ -179,11 +190,13 @@ export class SyncEngine {
     binding: RepositoryBinding,
     operation: SyncOperation,
     changes: CommitChanges,
+    staged: StagedLocalChange[],
+    reservedPaths: Set<string>,
     conflicts: ConflictRecord[],
     deviceName: string
   ): Promise<void> {
     if (!operation.baseOid || !operation.remoteOid || operation.size > MAX_TEXT_MERGE_BYTES) {
-      await this.preserveBoth(binding, operation, changes, conflicts, deviceName, "binary");
+      await this.preserveBoth(binding, operation, changes, staged, reservedPaths, conflicts, deviceName, "binary");
       return;
     }
     const [baseBytes, localBytes, remoteBytes] = await Promise.all([
@@ -195,16 +208,16 @@ export class SyncEngine {
     const local = decodeUtf8(localBytes);
     const remote = decodeUtf8(remoteBytes);
     if (base === null || local === null || remote === null || base.includes("\0") || local.includes("\0") || remote.includes("\0")) {
-      await this.preserveBoth(binding, operation, changes, conflicts, deviceName, "binary", localBytes, remoteBytes);
+      await this.preserveBoth(binding, operation, changes, staged, reservedPaths, conflicts, deviceName, "binary", localBytes, remoteBytes);
       return;
     }
     const merged = mergeText(base, local, remote);
     if (!merged.clean || merged.text === undefined) {
-      await this.preserveBoth(binding, operation, changes, conflicts, deviceName, "overlapping-text", localBytes, remoteBytes);
+      await this.preserveBoth(binding, operation, changes, staged, reservedPaths, conflicts, deviceName, "overlapping-text", localBytes, remoteBytes);
       return;
     }
     const bytes = utf8(merged.text);
-    await this.vault.write(operation.path, bytes);
+    staged.push({ kind: "write", path: operation.path, bytes });
     changes.additions.push({ path: operation.path, bytes });
   }
 
@@ -212,31 +225,36 @@ export class SyncEngine {
     binding: RepositoryBinding,
     operation: Extract<SyncOperation, { kind: "conflict" }>,
     changes: CommitChanges,
+    staged: StagedLocalChange[],
+    reservedPaths: Set<string>,
     conflicts: ConflictRecord[],
     deviceName: string
   ): Promise<void> {
     if (operation.reason === "local-delete-remote-modify") {
       if (!operation.remoteOid) throw new Error(`Missing remote OID for ${operation.path}`);
-      await this.vault.write(operation.path, await this.verifiedBlob(binding, operation.remoteOid));
+      const remoteBytes = await this.verifiedBlob(binding, operation.remoteOid);
+      staged.push({ kind: "write", path: operation.path, bytes: remoteBytes });
       conflicts.push(conflictRecord(operation.path, operation.reason));
       return;
     }
     if (operation.reason === "remote-delete-local-modify") {
       const localBytes = await this.vault.read(operation.path);
-      const conflictPath = await this.uniqueConflictPath(operation.path, deviceName);
-      await this.vault.write(conflictPath, localBytes);
-      await this.vault.remove(operation.path);
+      const conflictPath = await this.uniqueConflictPath(operation.path, deviceName, reservedPaths);
+      staged.push({ kind: "write", path: conflictPath, bytes: localBytes });
+      staged.push({ kind: "remove", path: operation.path });
       changes.additions.push({ path: conflictPath, bytes: localBytes });
       conflicts.push(conflictRecord(operation.path, operation.reason, conflictPath));
       return;
     }
-    await this.preserveBoth(binding, operation, changes, conflicts, deviceName, operation.reason);
+    await this.preserveBoth(binding, operation, changes, staged, reservedPaths, conflicts, deviceName, operation.reason);
   }
 
   private async preserveBoth(
     binding: RepositoryBinding,
     operation: SyncOperation,
     changes: CommitChanges,
+    staged: StagedLocalChange[],
+    reservedPaths: Set<string>,
     conflicts: ConflictRecord[],
     deviceName: string,
     reason: ConflictRecord["reason"],
@@ -248,9 +266,9 @@ export class SyncEngine {
       knownLocal ? Promise.resolve(knownLocal) : this.vault.read(operation.path),
       knownRemote ? Promise.resolve(knownRemote) : this.verifiedBlob(binding, operation.remoteOid)
     ]);
-    const conflictPath = await this.uniqueConflictPath(operation.path, deviceName);
-    await this.vault.write(conflictPath, localBytes);
-    await this.vault.write(operation.path, remoteBytes);
+    const conflictPath = await this.uniqueConflictPath(operation.path, deviceName, reservedPaths);
+    staged.push({ kind: "write", path: conflictPath, bytes: localBytes });
+    staged.push({ kind: "write", path: operation.path, bytes: remoteBytes });
     changes.additions.push({ path: conflictPath, bytes: localBytes });
     conflicts.push(conflictRecord(operation.path, reason, conflictPath));
   }
@@ -297,7 +315,9 @@ export class SyncEngine {
     return head;
   }
 
-  private async uniqueConflictPath(path: string, deviceName: string): Promise<string> {
+  // Conflict copies are staged rather than written, so vault.exists cannot see
+  // the ones this run already claimed. reserved keeps them distinct.
+  private async uniqueConflictPath(path: string, deviceName: string, reserved: Set<string>): Promise<string> {
     const dot = path.lastIndexOf(".");
     const stem = dot > path.lastIndexOf("/") ? path.slice(0, dot) : path;
     const extension = dot > path.lastIndexOf("/") ? path.slice(dot) : "";
@@ -305,10 +325,11 @@ export class SyncEngine {
     const safeDevice = deviceName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").slice(0, 24) || "device";
     let candidate = `${stem}.conflict-${safeDevice}-${stamp}${extension}`;
     let suffix = 2;
-    while (await this.vault.exists(candidate)) {
+    while (reserved.has(candidate) || (await this.vault.exists(candidate))) {
       candidate = `${stem}.conflict-${safeDevice}-${stamp}-${suffix}${extension}`;
       suffix += 1;
     }
+    reserved.add(candidate);
     return candidate;
   }
 }

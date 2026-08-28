@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.5 — Sync durability and safety fixes
+
+- Apply conflict copies and merged files only after the remote commit succeeds, so a failed push leaves the vault exactly as the user left it instead of overwriting local edits and discarding the conflict record.
+- Share a single refresh across concurrent requests, because GitHub invalidates a rotating refresh token as soon as one caller redeems it.
+- Report a branch without a vault marker as an absent marker rather than a request failure, matching what every caller already expects.
+- Skip paths that cannot be stored portably and report them, instead of refusing to synchronize the entire vault because of one filename.
+- Bind a vault only from an explicit choice; a branch guessed from the local folder name silently forked devices onto separate branches.
+- Queue preference, policy, restore, disconnect and sign-out operations so they can no longer interleave with a running sync.
+- Reuse content hashes for files whose modification time and size are unchanged, removing a full vault rehash from every automatic sync.
+- Add a settings field for community plugin data, which the sync policy supported but no screen exposed.
+- Accept an empty device-name field while typing instead of rejecting every keystroke.
+
 ## 0.1.4 — Canonical vault branch selection
 
 - Deduplicate branches that carry the same stable `vaultId` and prefer the branch whose actual name matches the shared vault metadata.

@@ -3,7 +3,7 @@ import { GitHubAuth, GitHubAuthError, type SecretStore } from "./auth/github-aut
 import type { DashboardController, DashboardSnapshot } from "./controller";
 import { GitHubApiError, GitHubClient } from "./github/github-client";
 import { createDefaultSettings, loadSettings } from "./settings";
-import { SyncBlockedError, SyncChangedDuringRunError, SyncEngine, SyncReviewRequiredError } from "./sync/engine";
+import { SyncChangedDuringRunError, SyncEngine, SyncReviewRequiredError } from "./sync/engine";
 import { ObsidianVaultStore } from "./sync/vault-store";
 import {
   SCHEMA_VERSION,
@@ -34,6 +34,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   private auth!: GitHubAuth;
   private github!: GitHubClient;
   private engine!: SyncEngine;
+  private vaultStore!: ObsidianVaultStore;
   private readonly listeners = new Set<() => void>();
   private repositories: RepositoryRef[] = [];
   private remoteVaults: RemoteVaultSummary[] = [];
@@ -57,7 +58,8 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     };
     this.auth = new GitHubAuth(APP_CONFIG, secretStore);
     this.github = new GitHubClient(this.auth);
-    this.engine = new SyncEngine(this.github, new ObsidianVaultStore(this.app));
+    this.vaultStore = new ObsidianVaultStore(this.app);
+    this.engine = new SyncEngine(this.github, this.vaultStore);
 
     this.registerView(DASHBOARD_VIEW_TYPE, (leaf) => new ConstellationDashboardView(leaf, this));
     this.addRibbonIcon("orbit", "Constellation Sync", () => void this.activateView());
@@ -186,20 +188,11 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     this.selectedRepository = repository;
     this.setStatus("scanning", `Scanning ${repository.fullName}…`);
     try {
+      // Selecting a repository only discovers what is already there. Binding a
+      // vault always needs an explicit choice, because guessing a branch from
+      // the local folder name silently forks devices onto separate branches
+      // whenever those folder names differ.
       this.remoteVaults = await this.github.discoverVaults(repository);
-      if (!this.settings.binding) {
-        const suggestedBranch = this.suggestedLocalBranch(repository.defaultBranch);
-        const matchingVault = suggestedBranch ? this.remoteVaults.find((vault) => vault.branch.name === suggestedBranch) : undefined;
-        if (suggestedBranch && !matchingVault) {
-          const branches = await this.github.listBranches(repository);
-          if (!branches.some((branch) => branch.name === suggestedBranch)) {
-            await this.createVaultInternal(repository, suggestedBranch);
-            return;
-          }
-          this.setStatus("idle", `Detected branch ${suggestedBranch} already exists without a vault marker`);
-          return;
-        }
-      }
       this.setStatus("idle", `Found ${this.remoteVaults.length} vault branches`);
     } catch (error) {
       this.handleError(error);
@@ -337,7 +330,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       const binding = await this.reconcileBinding();
       const fresh = await this.engine.createPlan(binding, this.settings.policy, this.settings.baseManifest);
       if (fresh.id !== pending.id) {
-        if (fresh.operations.length === 0 && fresh.blockedFiles.length === 0 && fresh.largeFileWarnings.length === 0 && !fresh.deletionGuardTriggered) {
+        if (fresh.operations.length === 0 && fresh.largeFileWarnings.length === 0 && !fresh.deletionGuardTriggered) {
           // A previous attempt may have committed successfully before the final
           // verification request observed the new remote head. Finalize the
           // no-op plan locally instead of asking the user to upload everything again.
@@ -371,6 +364,10 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   async cancelPendingSync(): Promise<void> {
+    return this.enqueueOperation(() => this.cancelPendingSyncInternal());
+  }
+
+  private async cancelPendingSyncInternal(): Promise<void> {
     delete this.settings.pendingReview;
     await this.saveSettings();
     this.setStatus(this.settings.paused ? "paused" : "idle", "Pending sync cancelled");
@@ -391,6 +388,10 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   async restoreFile(path: string, commitOid: string): Promise<void> {
+    return this.enqueueOperation(() => this.restoreFileInternal(path, commitOid));
+  }
+
+  private async restoreFileInternal(path: string, commitOid: string): Promise<void> {
     const binding = this.requireBinding();
     if (this.settings.pendingReview) throw new Error("Complete or cancel the pending sync before restoring a file.");
     const normalized = normalizeRepoPath(path);
@@ -398,13 +399,21 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       throw new Error("That path is outside the enabled sync policy.");
     }
     const bytes = await this.github.getFileAtCommit(binding.repository, normalized, commitOid);
-    await new ObsidianVaultStore(this.app).write(normalized, bytes);
+    await this.vaultStore.write(normalized, bytes);
     this.addActivity("restore", `Restored ${normalized} from ${commitOid.slice(0, 8)}`);
     await this.saveSettings();
-    await this.syncNow();
+    // Already inside the queue, so publish through performSync directly.
+    await this.performSync();
   }
 
   async updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale">(
+    key: K,
+    value: K extends "autoSync" | "paused" ? boolean : K extends "locale" ? LocaleSetting : string
+  ): Promise<void> {
+    return this.enqueueOperation(() => this.updatePreferenceInternal(key, value));
+  }
+
+  private async updatePreferenceInternal<K extends "autoSync" | "paused" | "deviceName" | "locale">(
     key: K,
     value: K extends "autoSync" | "paused" ? boolean : K extends "locale" ? LocaleSetting : string
   ): Promise<void> {
@@ -424,16 +433,32 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   async updateObsidianPolicy(key: "coreSettings" | "themesAndSnippets", value: boolean): Promise<void> {
-    this.settings.policy.obsidian[key] = value;
-    await this.persistSharedPolicy();
+    return this.enqueueOperation(async () => {
+      this.settings.policy.obsidian[key] = value;
+      await this.persistSharedPolicy();
+    });
   }
 
   async updateIgnorePatterns(value: string): Promise<void> {
-    this.settings.policy.ignorePatterns = value.split(/\r?\n/).map((line) => line.trimEnd());
-    await this.persistSharedPolicy();
+    return this.enqueueOperation(async () => {
+      this.settings.policy.ignorePatterns = value.split(/\r?\n/).map((line) => line.trimEnd());
+      await this.persistSharedPolicy();
+    });
+  }
+
+  async updateCommunityPluginData(pluginIds: string[]): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const unique = [...new Set(pluginIds.map((id) => id.trim()).filter((id) => id.length > 0))].sort();
+      this.settings.policy.obsidian.communityPluginData = unique;
+      await this.persistSharedPolicy();
+    });
   }
 
   async disconnectVault(): Promise<void> {
+    return this.enqueueOperation(() => this.disconnectVaultInternal());
+  }
+
+  private async disconnectVaultInternal(): Promise<void> {
     const branch = this.settings.binding?.branch;
     delete this.settings.binding;
     delete this.settings.pendingReview;
@@ -446,6 +471,10 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   async signOut(): Promise<void> {
+    return this.enqueueOperation(() => this.signOutInternal());
+  }
+
+  private async signOutInternal(): Promise<void> {
     this.auth.signOut();
     delete this.settings.account;
     this.repositories = [];
@@ -479,7 +508,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     if (!pending) return;
     const binding = await this.reconcileBinding();
     const fresh = await this.engine.createPlan(binding, this.settings.policy, this.settings.baseManifest);
-    if (fresh.operations.length === 0 && fresh.blockedFiles.length === 0 && fresh.largeFileWarnings.length === 0 && !fresh.deletionGuardTriggered) {
+    if (fresh.operations.length === 0 && fresh.largeFileWarnings.length === 0 && !fresh.deletionGuardTriggered) {
       await this.executePlan(binding, fresh, {
         planId: fresh.id,
         confirmInitialMerge: true,
@@ -508,8 +537,9 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       this.setStatus("scanning", "Comparing local and remote files…");
       const binding = await this.reconcileBinding();
       const plan = await this.engine.createPlan(binding, this.settings.policy, this.settings.baseManifest);
+      // Skipped files are reported, never a gate: a single unportable name used
+      // to hold the entire vault hostage with no way to proceed.
       const reviewRequired =
-        plan.blockedFiles.length > 0 ||
         (plan.initial && plan.operations.length > 0) ||
         plan.deletionGuardTriggered ||
         plan.largeFileWarnings.length > 0;
@@ -551,6 +581,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     const execution = await this.engine.execute(binding, this.settings.policy, plan, approval, this.settings.deviceName);
     binding.baseCommitOid = execution.baseCommitOid;
     this.settings.baseManifest = execution.manifest;
+    this.reportSkippedFiles(plan.blockedFiles);
     this.settings.conflicts.push(...execution.conflicts);
     this.settings.conflicts = this.settings.conflicts.slice(-200);
     this.settings.lastSuccessAt = new Date().toISOString();
@@ -564,6 +595,15 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     await this.saveSettings();
     const unresolved = this.settings.conflicts.some((item) => !item.resolved);
     this.setStatus(unresolved ? "conflict" : "idle", unresolved ? "Synchronization completed with preserved conflicts" : "Up to date");
+  }
+
+  private reportSkippedFiles(paths: string[]): void {
+    const previous = this.settings.skippedFiles;
+    const changed = paths.length !== previous.length || paths.some((path, index) => path !== previous[index]);
+    this.settings.skippedFiles = [...paths];
+    if (changed && paths.length > 0) {
+      this.addActivity("warning", `Skipped ${paths.length} file(s) that cannot sync safely on every platform`);
+    }
   }
 
   private async reconcileBinding(): Promise<NonNullable<PluginSettings["binding"]>> {
@@ -731,9 +771,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       if (error.code === "rate-limited") kind = "rate-limited";
       else if (error.status === 401) kind = "reauth-required";
       else if (error.status === 0) kind = "offline";
-    } else if (error instanceof SyncBlockedError) {
-      code = "blocked-files";
-      kind = "needs-review";
     }
     this.addActivity("error", `${code}: ${message}`);
     void this.saveSettings();

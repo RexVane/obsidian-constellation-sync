@@ -57,7 +57,11 @@ export class ConstellationSettingTab extends PluginSettingTab {
   override setControlValue(key: string, value: unknown): Promise<void> | void {
     if (key === "autoSync" && typeof value === "boolean") return this.controller.updatePreference("autoSync", value);
     if (key === "paused" && typeof value === "boolean") return this.controller.updatePreference("paused", value);
-    if (key === "deviceName" && typeof value === "string") return this.controller.updatePreference("deviceName", value);
+    // Typing through an empty field must not reject: the setter rejects a blank
+    // name, and these callbacks fire on every keystroke.
+    if (key === "deviceName" && typeof value === "string" && value.trim().length > 0) {
+      return this.controller.updatePreference("deviceName", value);
+    }
   }
 
   override display(): void {
@@ -82,7 +86,11 @@ export class ConstellationSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName(t("deviceName"))
-      .addText((text) => text.setValue(snapshot.settings.deviceName).onChange((value) => this.controller.updatePreference("deviceName", value)));
+      .addText((text) =>
+        text.setValue(snapshot.settings.deviceName).onChange((value) => {
+          if (value.trim().length > 0) void this.controller.updatePreference("deviceName", value);
+        })
+      );
 
     containerEl.createDiv({ cls: "setting-item-description", text: t("privateNotEncrypted") });
   }

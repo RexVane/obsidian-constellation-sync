@@ -21,10 +21,15 @@ export interface PlanInput {
 export async function buildSyncPlan(input: PlanInput): Promise<SyncPlan> {
   const operations: SyncOperation[] = [];
   const blockedFiles: string[] = [...(input.blockedPaths ?? [])];
+  const unportable = new Set(input.blockedPaths ?? []);
   const largeFileWarnings: string[] = [];
   const paths = new Set([...Object.keys(input.base), ...Object.keys(input.local), ...Object.keys(input.remote)]);
 
   for (const path of [...paths].sort()) {
+    // A path that cannot exist on every platform, or that Git refuses outright,
+    // is skipped rather than planned. One such file used to stall the whole
+    // vault; the rest of the tree has no reason to wait for it.
+    if (unportable.has(path)) continue;
     const base = input.base[path];
     const local = input.local[path];
     const remote = input.remote[path];
@@ -39,6 +44,7 @@ export async function buildSyncPlan(input: PlanInput): Promise<SyncPlan> {
     if (operation) operations.push(operation);
   }
 
+  blockedFiles.sort();
   const summary = summarize(operations, largeFileWarnings.length);
   const trackedCount = Math.max(Object.keys(input.base).length, Object.keys(input.remote).length, 1);
   const localDeletionCount = summary.localDeletes;
