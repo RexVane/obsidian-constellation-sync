@@ -135,7 +135,9 @@ export class GitHubClient {
   }
 
   async discoverVaults(repository: RepositoryRef): Promise<RemoteVaultSummary[]> {
-    const branches = (await this.listBranches(repository)).filter((branch) => branch.name !== repository.defaultBranch);
+    // The default branch is included: a dedicated repository may use it as the
+    // vault root, and a marker-less default branch simply returns null below.
+    const branches = await this.listBranches(repository);
     const results: RemoteVaultSummary[] = [];
     for (let offset = 0; offset < branches.length; offset += 4) {
       const batch = branches.slice(offset, offset + 4);
@@ -258,6 +260,26 @@ export class GitHubClient {
     return this.createCommitOnBranch(repository, branch, defaultHead, `Initialize ${branch}`, {
       additions: [{ path: VAULT_META_PATH, bytes: utf8(JSON.stringify(metadata, null, 2) + "\n") }],
       deletions
+    });
+  }
+
+  /**
+   * Turns the repository's default branch into the vault root. Unlike a fresh
+   * vault branch, content already on the branch is kept: the marker lands on
+   * top and existing files become ordinary synchronized notes.
+   */
+  async createVaultOnDefaultBranch(repository: RepositoryRef, metadata: VaultMetadata): Promise<string> {
+    let head: string;
+    try {
+      head = await this.getBranchHead(repository, repository.defaultBranch);
+    } catch (error) {
+      if (!isEmptyRepositoryError(error)) throw error;
+      // An empty repository exposes no branch head until its first commit.
+      head = await this.createInitialRepositoryCommit(repository);
+    }
+    return this.createCommitOnBranch(repository, repository.defaultBranch, head, `Initialize ${repository.defaultBranch}`, {
+      additions: [{ path: VAULT_META_PATH, bytes: utf8(JSON.stringify(metadata, null, 2) + "\n") }],
+      deletions: []
     });
   }
 

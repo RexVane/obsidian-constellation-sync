@@ -22,7 +22,7 @@ Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 私有仓库�
 
 ## 安全与隐私
 
-插件使用你创建并粘贴进来的 GitHub 个人访问令牌（PAT）连接 GitHub。令牌只保存在 Obsidian SecretStorage 中，绝不写入笔记文件、`data.json` 或 Git 历史。细粒度令牌可以只授权同步仓库的 Contents 读写权限；插件预填的经典令牌带有更宽的 `repo` 权限，建议设置为永不过期。你随时可以在 GitHub 上吊销令牌。私有仓库只控制访问权限，并不等于端到端加密：GitHub 以及拥有仓库权限的人可以读取同步内容。分步操作说明见 [`docs/github-token-setup.zh-CN.md`](docs/github-token-setup.zh-CN.md)。
+插件使用你创建并粘贴进来的 GitHub 个人访问令牌（PAT）连接 GitHub。令牌只保存在 Obsidian SecretStorage 中，绝不写入笔记文件、`data.json` 或 Git 历史。细粒度令牌（Fine-grained tokens）可以只授权同步仓库的 Contents 读写权限；插件预填的经典令牌带有更宽的 `repo` 权限，建议设置为永不过期。你随时可以在 GitHub 上吊销令牌。私有仓库只控制访问权限，并不等于端到端加密：GitHub 以及拥有仓库权限的人可以读取同步内容。分步操作说明见 [`docs/github-token-setup.zh-CN.md`](docs/github-token-setup.zh-CN.md)。
 
 本公开仓库不包含用户令牌、Client Secret、本地笔记或 `.env.local`。编译后的 `main.js` 不提交到源码分支，只作为带版本号的 GitHub Release 资产发布。
 
@@ -44,7 +44,7 @@ Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 私有仓库�
 
 ## 状态
 
-当前发布版本为 `0.2.0`：连接 GitHub 只需创建一个访问令牌并粘贴进来——GitHub App、OAuth 设备流和所有构建变量都已移除。仪表盘精简为"概览"和"设置"两页，冲突直接显示在概览中，同步策略只保留忽略规则和显式列出的社区插件数据。使用旧版本连接的设备，在 App 会话过期后用令牌重新登录一次即可。
+当前发布版本为 `0.2.1`：连接 GitHub 只需创建一个访问令牌并粘贴进来（登录页内置两种令牌的逐步说明）；首次绑定可以直接使用仓库默认分支，也可以新建分支或加入已有分支。仪表盘精简为"概览"和"设置"两页，冲突直接显示在概览中，同步策略只保留忽略规则和显式列出的社区插件数据。使用旧版本连接的设备，在 App 会话过期后用令牌重新登录一次即可。
 
 ## 开源协议
 

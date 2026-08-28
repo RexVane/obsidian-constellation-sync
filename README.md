@@ -10,7 +10,7 @@ Constellation Sync is an Obsidian community plugin for synchronizing multiple va
 - Each vault lives at the root of one non-default branch.
 - The branch name is the vault's shared English name, such as `work-notes`.
 - `.constellation-sync/vault.json` stores a stable `vaultId`, so devices can follow branch renames safely.
-- The default branch is only a repository landing page and is never used as a vault branch.
+- A vault uses either the repository's default branch (the simple choice for a dedicated repository) or a dedicated non-default branch named after the vault's shared English name, which lets one repository hold several vaults.
 - Visible empty directories are represented by an internal `.constellation-sync-empty-folder` marker, allowing GitHub and other devices to reconstruct the complete vault folder structure. The marker is removed automatically once the directory holds a real file.
 - Branch discovery deduplicates the stable `vaultId`, displays the actual GitHub branch name and revalidates it when another device joins.
 
@@ -44,7 +44,7 @@ No build variables are required: the plugin contains no OAuth client ID, no clie
 
 ## Status
 
-Version `0.2.0` is the current release: connecting is a matter of creating a GitHub token and pasting it in — the GitHub App, OAuth Device Flow and every build variable are gone. The dashboard is reduced to Overview and Settings, with conflicts shown inline on the overview, and the sync-policy options are limited to ignore patterns and explicitly listed community plugin data. Devices connected with an older version re-connect once with a token after their App session expires.
+Version `0.2.1` is the current release: connecting is a matter of creating a GitHub token and pasting it in, with the creation steps spelled out in the login screen. First-time binding can use the repository's default branch, a new branch, or an existing vault branch. The dashboard is reduced to Overview and Settings, with conflicts shown inline on the overview, and the sync-policy options are limited to ignore patterns and explicitly listed community plugin data. Devices connected with an older version re-connect once with a token after their App session expires.
 
 ## License
 

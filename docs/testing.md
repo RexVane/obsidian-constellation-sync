@@ -5,6 +5,8 @@ The automated suite is run by `npm run check` and includes type checking, lintin
 Before a public beta, run the following against a disposable private repository:
 
 - Create two vault branches in one repository and verify branch isolation.
+- Bind a vault to the repository's default branch and verify existing files (for example a README) sync as notes.
+- Bind a second device to the same default branch and verify it joins the existing vault identity.
 - Join from an empty Vault and from a non-empty Vault; inspect the initial preview before confirming.
 - Edit different sections on two devices and verify a clean merge.
 - Edit the same section and verify the original remote path plus a local conflict copy.

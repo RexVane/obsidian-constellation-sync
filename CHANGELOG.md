@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — Bind the default branch as a vault
+
+- The first-run setup now offers to use the repository's default branch (for example main) as the vault root — the simple choice for a dedicated repository — alongside creating a new branch and joining an existing one.
+- Branch discovery includes the default branch, so other devices can join a vault that lives there.
+- Binding keeps the branch's existing content: files already on the default branch are synced as notes instead of being cleared.
+- Concurrent first-time bindings of the same default branch converge: the device that loses the race follows the winner's vault identity.
+- The login screen spells out both token paths with GitHub's English UI labels (classic: set Expiration to No expiration; Fine-grained tokens: Only select repositories plus Contents = Read and write) and no longer points at the docs.
+
 ## 0.2.0 — Sign in with a GitHub token
 
 Breaking change: the GitHub App and OAuth Device Flow are gone. Existing devices keep working until their App session expires, then re-connect once by pasting a token.

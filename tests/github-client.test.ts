@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RequestUrlParam, RequestUrlResponse } from "obsidian";
 import type { GitHubAuth } from "../src/auth/github-auth";
 import { GitHubClient, isStaleHeadError, selectCanonicalVaults } from "../src/github/github-client";
+import { bytesToBase64, utf8 } from "../src/utils/encoding";
 import type { RemoteVaultSummary, RepositoryRef, VaultMetadata } from "../src/types";
 
 const repository: RepositoryRef = { id: 10, nodeId: "node", owner: "owner", name: "notes", fullName: "owner/notes", private: true, defaultBranch: "main" };
@@ -13,6 +14,21 @@ function response(json: unknown, status = 200): RequestUrlResponse {
 function parseBody(request: RequestUrlParam | undefined): Record<string, unknown> {
   if (!request || typeof request.body !== "string") throw new Error("Expected a JSON request body.");
   return JSON.parse(request.body) as Record<string, unknown>;
+}
+
+function vaultMetadata(englishName: string): VaultMetadata {
+  return {
+    schemaVersion: 1,
+    vaultId: "shared-vault",
+    englishName,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    policyRevision: 1,
+    syncPolicy: {
+      obsidian: { communityPluginData: [] },
+      ignorePatterns: []
+    }
+  };
 }
 
 describe("GitHub client request contracts", () => {
@@ -84,6 +100,45 @@ describe("GitHub client request contracts", () => {
     expect(repositories[100]?.fullName).toBe("owner/repo-101");
     expect(requests[0]?.url).toBe("https://api.github.com/user/repos?visibility=private&per_page=100&page=1");
     expect(requests[1]?.url).toBe("https://api.github.com/user/repos?visibility=private&per_page=100&page=2");
+  });
+
+  it("discovers a vault living on the default branch", async () => {
+    const requests: RequestUrlParam[] = [];
+    const queue = [
+      response([{ name: "main", protected: false, commit: { sha: "main-head" } }]),
+      response({ type: "file", encoding: "base64", content: bytesToBase64(utf8(JSON.stringify(vaultMetadata("main")))) })
+    ];
+    const client = new GitHubClient({ getValidAccessToken: () => "token" } as GitHubAuth, (request) => {
+      requests.push(request);
+      return Promise.resolve(queue.shift() ?? response({}, 500));
+    });
+
+    const vaults = await client.discoverVaults(repository);
+
+    expect(vaults).toHaveLength(1);
+    expect(vaults[0]?.branch.name).toBe("main");
+    expect(requests[1]?.url).toContain("/contents/.constellation-sync/vault.json?ref=main");
+  });
+
+  it("binds the default branch by committing only the vault marker", async () => {
+    const requests: RequestUrlParam[] = [];
+    const queue = [
+      response({ object: { sha: "main-head" } }),
+      response({ data: { createCommitOnBranch: { commit: { oid: "marker-head" } } } })
+    ];
+    const client = new GitHubClient({ getValidAccessToken: () => "token" } as GitHubAuth, (request) => {
+      requests.push(request);
+      return Promise.resolve(queue.shift() ?? response({}, 500));
+    });
+
+    await expect(client.createVaultOnDefaultBranch(repository, vaultMetadata("main"))).resolves.toBe("marker-head");
+
+    expect(requests[0]?.url).toContain("/git/ref/heads/main");
+    const body = parseBody(requests[1]);
+    const input = body.variables as { input: { expectedHeadOid: string; fileChanges: { additions: Array<{ path: string }>; deletions: unknown[] } } };
+    expect(input.input.expectedHeadOid).toBe("main-head");
+    expect(input.input.fileChanges.additions[0]?.path).toBe(".constellation-sync/vault.json");
+    expect(input.input.fileChanges.deletions).toEqual([]);
   });
 
   it("reads a recursive tree while excluding the remote marker", async () => {

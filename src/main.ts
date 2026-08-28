@@ -228,6 +228,61 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     await this.performSync();
   }
 
+  async useDefaultBranch(repository: RepositoryRef): Promise<void> {
+    return this.enqueueOperation(() => this.useDefaultBranchInternal(repository));
+  }
+
+  private async useDefaultBranchInternal(repository: RepositoryRef): Promise<void> {
+    if (!repository.private) throw new Error("Constellation Sync refuses public repositories.");
+    if (this.settings.binding) throw new Error("This Obsidian vault is already bound to a GitHub branch.");
+    const branch = repository.defaultBranch;
+    this.setStatus("syncing", `Using ${branch} as the vault…`);
+    const now = new Date().toISOString();
+    let vaultId: string;
+    let policyRevision: number;
+    let policy: SyncPolicy;
+    // Another device may already have turned the default branch into the vault;
+    // in that case this is a join, not a creation.
+    const existing = await this.github.getVaultMetadata(repository, branch);
+    if (existing) {
+      vaultId = existing.vaultId;
+      policyRevision = existing.policyRevision;
+      policy = structuredClone(existing.syncPolicy);
+      this.addActivity("bind", `Joined vault branch ${branch}`);
+    } else {
+      const metadata: VaultMetadata = {
+        schemaVersion: SCHEMA_VERSION,
+        vaultId: crypto.randomUUID(),
+        englishName: branch,
+        createdAt: now,
+        updatedAt: now,
+        policyRevision: 1,
+        syncPolicy: structuredClone(this.settings.policy)
+      };
+      await this.github.createVaultOnDefaultBranch(repository, metadata);
+      vaultId = metadata.vaultId;
+      policyRevision = metadata.policyRevision;
+      policy = structuredClone(metadata.syncPolicy);
+      // The metadata check and the marker commit are not atomic. If another
+      // device claimed the branch in between, follow the winner's identity.
+      const committed = await this.github.getVaultMetadata(repository, branch);
+      if (committed && committed.vaultId !== metadata.vaultId) {
+        this.addActivity("warning", `Another device bound ${branch} at the same time; following its vault identity`);
+        vaultId = committed.vaultId;
+        policyRevision = committed.policyRevision;
+        policy = structuredClone(committed.syncPolicy);
+      } else {
+        this.addActivity("bind", `Using ${branch} as the vault`);
+      }
+    }
+    this.settings.binding = { repository, vaultId, branch, policyRevision, boundAt: now };
+    this.settings.policy = policy;
+    this.settings.baseManifest = {};
+    delete this.settings.pendingReview;
+    await this.saveSettings();
+    await this.performSync();
+  }
+
   async joinVault(repository: RepositoryRef, vault: RemoteVaultSummary): Promise<void> {
     return this.enqueueOperation(() => this.joinVaultInternal(repository, vault));
   }

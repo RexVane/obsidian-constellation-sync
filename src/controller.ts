@@ -26,6 +26,7 @@ export interface DashboardController {
   refreshRepositories(): Promise<void>;
   selectRepository(repository: RepositoryRef): Promise<void>;
   createVault(repository: RepositoryRef, englishName: string): Promise<void>;
+  useDefaultBranch(repository: RepositoryRef): Promise<void>;
   joinVault(repository: RepositoryRef, vault: RemoteVaultSummary): Promise<void>;
   renameVault(englishName: string): Promise<void>;
   syncNow(): Promise<void>;

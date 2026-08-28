@@ -134,6 +134,7 @@ function LoginPanel(props: PanelProps): preact.JSX.Element {
             <Icon name="key-round" /> {t("createToken")}
           </button>
         </div>
+        <p class="cs-muted">{t("tokenClassicHelp")}</p>
         <label class="cs-field">
           <span>{t("tokenField")}</span>
           <input
@@ -151,7 +152,7 @@ function LoginPanel(props: PanelProps): preact.JSX.Element {
         >
           {t("connectGithub")}
         </button>
-        <p class="cs-muted">{t("tokenFineGrainedHelp")}</p>
+        <p class="cs-muted">{t("tokenFineHelp")}</p>
       </div>
     </section>
   );
@@ -190,11 +191,15 @@ function VaultSetup(props: PanelProps): preact.JSX.Element {
       {selected ? (
         <div class="cs-two-column">
           <section class="cs-card">
-            <p class="cs-kicker">New branch</p>
+            <p class="cs-kicker">New vault</p>
             <h2>{t("createVault")}</h2>
+            <button class="cs-button cs-button-primary" disabled={busy(snapshot)} onClick={() => void run(() => controller.useDefaultBranch(selected))}>
+              <Icon name="corner-down-right" /> {t("useDefaultBranch").replace("{branch}", selected.defaultBranch)}
+            </button>
+            <p class="cs-muted">{t("defaultBranchHelp")}</p>
             {snapshot.suggestedBranch ? <p class="cs-muted">{t("localVault")}: <strong>{snapshot.localVaultName}</strong> → <code>{snapshot.suggestedBranch}</code><br />{t("autoBranchHelp")}</p> : null}
             <label class="cs-field"><span>{t("englishName")}</span><input value={name} placeholder="work-notes" onInput={(event) => setName(event.currentTarget.value)} /><small>{t("branchHelp")}</small></label>
-            <button class="cs-button cs-button-primary" disabled={!name.trim() || busy(snapshot)} onClick={() => void run(() => controller.createVault(selected, name))}>{t("createVault")}</button>
+            <button class="cs-button" disabled={!name.trim() || busy(snapshot)} onClick={() => void run(() => controller.createVault(selected, name))}>{t("newBranchCta")}</button>
           </section>
           <section class="cs-card">
             <p class="cs-kicker">Existing branches</p>
