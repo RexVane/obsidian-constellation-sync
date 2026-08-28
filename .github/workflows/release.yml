@@ -1,0 +1,66 @@
+name: Build and attest release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and upload
+        required: true
+        default: 0.1.0
+      source_ref:
+        description: Git ref containing the source to build
+        required: true
+        default: main
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      SOURCE_REF: ${{ github.event.release.tag_name || inputs.source_ref || 'main' }}
+      # This is public OAuth metadata, not a client secret. Secrets and user
+      # tokens are never placed in the repository or in the build.
+      CONSTELLATION_GITHUB_CLIENT_ID: Iv23liP1SGkZ70ToT0ng
+      CONSTELLATION_GITHUB_APP_SLUG: constellation-sync
+      CONSTELLATION_GITHUB_INSTALL_URL: https://github.com/apps/constellation-sync/installations/new
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build release files
+        run: npm run build
+
+      - name: Validate release version
+        run: node --input-type=module -e "const manifest = JSON.parse(await (await import('node:fs/promises')).readFile('manifest.json', 'utf8')); if (manifest.version !== process.env.RELEASE_TAG) throw new Error('manifest.version must match RELEASE_TAG');"
+
+      - name: Generate artifact attestations
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            ${{ github.workspace }}/main.js
+            ${{ github.workspace }}/manifest.json
+            ${{ github.workspace }}/styles.css
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE_TAG" main.js manifest.json styles.css --repo "$GITHUB_REPOSITORY" --clobber
