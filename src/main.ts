@@ -2,7 +2,7 @@ import { Notice, Plugin } from "obsidian";
 import { GitHubAuth, GitHubAuthError, type SecretStore } from "./auth/github-auth";
 import type { DashboardController, DashboardSnapshot } from "./controller";
 import { GitHubApiError, GitHubClient, isStaleHeadError } from "./github/github-client";
-import { createDefaultSettings, loadSettings, shouldAdoptRemotePolicy } from "./settings";
+import { createDefaultSettings, loadSettings, normalizePollInterval, shouldAdoptRemotePolicy } from "./settings";
 import { SyncChangedDuringRunError, SyncEngine, SyncReviewRequiredError } from "./sync/engine";
 import { ObsidianVaultStore } from "./sync/vault-store";
 import {
@@ -72,7 +72,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     this.registerDomEvent(document, "visibilitychange", () => {
       if (document.visibilityState === "visible") void this.pollImmediately();
     });
-    this.registerInterval(window.setInterval(() => void this.maybePollRemote(), 15_000));
+    this.registerInterval(window.setInterval(() => void this.maybePollRemote(), 5_000));
 
     this.setStatus(this.settings.paused ? "paused" : "idle", this.settings.paused ? "Paused" : "Ready");
     void this.initializeSession();
@@ -435,22 +435,36 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     await this.performSync();
   }
 
-  async updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale">(
+  async updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs">(
     key: K,
-    value: K extends "autoSync" | "paused" ? boolean : K extends "locale" ? LocaleSetting : string
+    value: K extends "autoSync" | "paused"
+      ? boolean
+      : K extends "locale"
+        ? LocaleSetting
+        : K extends "remotePollMs"
+          ? number
+          : string
   ): Promise<void> {
     return this.enqueueOperation(() => this.updatePreferenceInternal(key, value));
   }
 
-  private async updatePreferenceInternal<K extends "autoSync" | "paused" | "deviceName" | "locale">(
+  private async updatePreferenceInternal<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs">(
     key: K,
-    value: K extends "autoSync" | "paused" ? boolean : K extends "locale" ? LocaleSetting : string
+    value: K extends "autoSync" | "paused"
+      ? boolean
+      : K extends "locale"
+        ? LocaleSetting
+        : K extends "remotePollMs"
+          ? number
+          : string
   ): Promise<void> {
     if (key === "autoSync" || key === "paused") {
       if (key === "autoSync") this.settings.autoSync = value as boolean;
       else this.settings.paused = value as boolean;
     } else if (key === "locale") {
       this.settings.locale = value as LocaleSetting;
+    } else if (key === "remotePollMs") {
+      this.settings.remotePollMs = normalizePollInterval(value);
     } else {
       const name = String(value).trim().slice(0, 32);
       if (!name) throw new Error("Device name cannot be empty.");

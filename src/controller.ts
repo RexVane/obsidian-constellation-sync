@@ -34,9 +34,15 @@ export interface DashboardController {
   cancelPendingSync(): Promise<void>;
   resolveConflict(id: string): Promise<void>;
   restoreFile(path: string, commitOid: string): Promise<void>;
-  updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale">(
+  updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs">(
     key: K,
-    value: K extends "autoSync" | "paused" ? boolean : K extends "locale" ? LocaleSetting : string
+    value: K extends "autoSync" | "paused"
+      ? boolean
+      : K extends "locale"
+        ? LocaleSetting
+        : K extends "remotePollMs"
+          ? number
+          : string
   ): Promise<void>;
   updateIgnorePatterns(value: string): Promise<void>;
   updateCommunityPluginData(pluginIds: string[]): Promise<void>;

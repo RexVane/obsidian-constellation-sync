@@ -328,6 +328,7 @@ function SettingsPage({ snapshot, controller, run, t }: PanelProps): preact.JSX.
         <Toggle label={t("automaticSync")} checked={settings.autoSync} onChange={(value) => void run(() => controller.updatePreference("autoSync", value))} />
         <Toggle label={t("paused")} checked={settings.paused} onChange={(value) => void run(() => controller.updatePreference("paused", value))} />
         <label class="cs-setting-row"><span><strong>{t("language")}</strong></span><select value={settings.locale} onChange={(event) => void run(() => controller.updatePreference("locale", event.currentTarget.value as "auto" | "zh-CN" | "en"))}><option value="auto">{t("followObsidian")}</option><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
+        <label class="cs-setting-row"><span><strong>{t("checkInterval")}</strong></span><select value={String(settings.remotePollMs)} onChange={(event) => void run(() => controller.updatePreference("remotePollMs", Number(event.currentTarget.value)))}>{POLL_OPTIONS.map(([ms, key]) => <option value={String(ms)}>{t(key)}</option>)}</select></label>
         <label class="cs-setting-row"><span><strong>{t("deviceName")}</strong></span><div class="cs-inline-field"><input value={deviceName} onInput={(event) => setDeviceName(event.currentTarget.value)} /><button class="cs-button" onClick={() => void run(() => controller.updatePreference("deviceName", deviceName))}>{t("save")}</button></div></label>
       </section>
       <section class="cs-card"><label class="cs-field"><span>{t("ignores")}</span><textarea rows={8} value={ignores} onInput={(event) => setIgnores(event.currentTarget.value)} /><small>{t("ignoresHelp")}</small></label><button class="cs-button cs-button-primary" onClick={() => void run(() => controller.updateIgnorePatterns(ignores))}>{t("save")}</button></section>
@@ -365,6 +366,13 @@ interface PanelProps {
 const NAV_ITEMS: Array<{ id: Page; label: TranslationKey; icon: string }> = [
   { id: "overview", label: "overview", icon: "layout-dashboard" },
   { id: "settings", label: "settings", icon: "settings-2" }
+];
+
+const POLL_OPTIONS: Array<[number, TranslationKey]> = [
+  [15_000, "interval15s"],
+  [30_000, "interval30s"],
+  [60_000, "interval60s"],
+  [300_000, "interval300s"]
 ];
 
 function unresolvedConflicts(snapshot: DashboardSnapshot): ConflictRecord[] {

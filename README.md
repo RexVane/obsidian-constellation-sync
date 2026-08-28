@@ -67,7 +67,7 @@ No build variables are required: the plugin contains no OAuth client ID, no clie
 
 ## Status
 
-Version `0.2.1` is the current release: connecting is a matter of creating a GitHub token and pasting it in, with the creation steps spelled out in the login screen. First-time binding can use the repository's default branch, a new branch, or an existing vault branch. The dashboard is reduced to Overview and Settings, with conflicts shown inline on the overview, and the sync-policy options are limited to ignore patterns and explicitly listed community plugin data. Devices connected with an older version re-connect once with a token after their App session expires.
+Version `0.2.3` is the current release: connecting is a matter of creating a GitHub token and pasting it in, with the creation steps spelled out in the login screen. First-time binding can use the repository's default branch, a new branch, or an existing vault branch. Background checks run silently every 15 seconds by default (configurable in Settings) and stay invisible when nothing changed, so "last successful sync" only counts real change transfers.
 
 ## License
 

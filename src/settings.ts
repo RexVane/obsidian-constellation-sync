@@ -9,6 +9,19 @@ export const DEFAULT_POLICY: SyncPolicy = {
   ignorePatterns: []
 };
 
+export const POLL_INTERVAL_MS_OPTIONS = [15_000, 30_000, 60_000, 300_000];
+const DEFAULT_POLL_MS = 15_000;
+// The default before 0.2.3. A stored 60 000 is that default, not a deliberate
+// choice, so it migrates to the new default; anything the user actually picked
+// stays.
+const LEGACY_DEFAULT_POLL_MS = 60_000;
+
+export function normalizePollInterval(ms: unknown): number {
+  const value = typeof ms === "number" && Number.isFinite(ms) ? ms : DEFAULT_POLL_MS;
+  if (value === LEGACY_DEFAULT_POLL_MS) return DEFAULT_POLL_MS;
+  return POLL_INTERVAL_MS_OPTIONS.includes(value) ? value : DEFAULT_POLL_MS;
+}
+
 /**
  * Whether a remote policy read should replace the local one. `policyRevision`
  * only ever increases, so a read reporting less than what this device already
@@ -26,7 +39,7 @@ export function createDefaultSettings(): PluginSettings {
     autoSync: true,
     paused: false,
     localDebounceMs: 30_000,
-    remotePollMs: 60_000,
+    remotePollMs: DEFAULT_POLL_MS,
     deviceId: crypto.randomUUID(),
     deviceName: defaultDeviceName(),
     policy: structuredClone(DEFAULT_POLICY),
@@ -47,6 +60,7 @@ export function loadSettings(raw: unknown): PluginSettings {
     ...defaults,
     ...value,
     schemaVersion: SCHEMA_VERSION,
+    remotePollMs: normalizePollInterval(value.remotePollMs),
     policy: {
       obsidian: {
         ...defaults.policy.obsidian,
