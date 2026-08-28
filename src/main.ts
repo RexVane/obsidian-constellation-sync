@@ -346,7 +346,12 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   async syncNow(): Promise<void> {
-    return this.enqueueOperation(() => this.performSync());
+    return this.enqueueOperation(() => this.performSync(false));
+  }
+
+  /** Scheduled and focus-triggered syncs run silently in the background. */
+  private syncQuietly(): Promise<void> {
+    return this.enqueueOperation(() => this.performSync(true));
   }
 
   async approvePendingSync(): Promise<void> {
@@ -537,7 +542,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     this.setStatus("needs-review", "The remote changed; review the updated sync plan");
   }
 
-  private async performSync(): Promise<void> {
+  private async performSync(quiet = false): Promise<void> {
     if (!this.settings.binding) throw new Error("No vault branch is bound.");
     if (!this.settings.account) throw new Error("Connect GitHub before synchronizing.");
     if (this.settings.paused) {
@@ -549,7 +554,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       return;
     }
     try {
-      this.setStatus("scanning", "Comparing local and remote files…");
+      if (!quiet) this.setStatus("scanning", "Comparing local and remote files…");
       const binding = await this.reconcileBinding();
       const plan = await this.engine.createPlan(binding, this.settings.policy, this.settings.baseManifest);
       // Skipped files are reported, never a gate: a single unportable name used
@@ -569,10 +574,10 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
         confirmInitialMerge: false,
         confirmMassDeletion: false,
         confirmLargeFiles: false
-      });
+      }, quiet);
     } catch (error) {
       if (error instanceof SyncChangedDuringRunError) {
-        this.setStatus("scanning", "Files changed during sync; retrying with a fresh plan");
+        if (!quiet) this.setStatus("scanning", "Files changed during sync; retrying with a fresh plan");
         this.scheduleLocalSync();
         return;
       }
@@ -590,26 +595,34 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   private async executePlan(
     binding: NonNullable<PluginSettings["binding"]>,
     plan: NonNullable<PluginSettings["pendingReview"]>["plan"],
-    approval: SyncApproval
+    approval: SyncApproval,
+    quiet = false
   ): Promise<void> {
-    this.setStatus("syncing", "Synchronizing files…");
+    if (!quiet) this.setStatus("syncing", "Synchronizing files…");
     const execution = await this.engine.execute(binding, this.settings.policy, plan, approval, this.settings.deviceName);
     binding.baseCommitOid = execution.baseCommitOid;
     this.settings.baseManifest = execution.manifest;
     this.reportSkippedFiles(plan.blockedFiles);
     this.settings.conflicts.push(...execution.conflicts);
     this.settings.conflicts = this.settings.conflicts.slice(-200);
+    const unresolved = this.settings.conflicts.some((item) => !item.resolved);
+    const message = unresolved ? "Synchronization completed with preserved conflicts" : "Up to date";
+    delete this.settings.pendingReview;
+    // A routine check that found nothing on either side stays invisible: no
+    // disk write, no re-render, and "last successful sync" keeps pointing at
+    // the last time real changes were carried over.
+    if (execution.result.kind === "noop") {
+      if (!quiet) {
+        await this.saveSettings();
+        this.setStatus(unresolved ? "conflict" : "idle", message);
+      }
+      return;
+    }
     this.settings.lastSuccessAt = new Date().toISOString();
     delete this.settings.pendingReview;
-    this.addActivity(
-      "sync",
-      execution.result.kind === "noop" ? "No changes; local and remote are aligned" : `Synchronized ${plan.operations.length} changes`,
-      execution.result.commitOid,
-      plan.summary
-    );
+    this.addActivity("sync", `Synchronized ${plan.operations.length} changes`, execution.result.commitOid, plan.summary);
     await this.saveSettings();
-    const unresolved = this.settings.conflicts.some((item) => !item.resolved);
-    this.setStatus(unresolved ? "conflict" : "idle", unresolved ? "Synchronization completed with preserved conflicts" : "Up to date");
+    this.setStatus(unresolved ? "conflict" : "idle", message);
   }
 
   private reportSkippedFiles(paths: string[]): void {
@@ -734,7 +747,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     if (this.localTimer !== null) window.clearTimeout(this.localTimer);
     this.localTimer = window.setTimeout(() => {
       this.localTimer = null;
-      void this.syncNow().catch(() => undefined);
+      void this.syncQuietly().catch(() => undefined);
     }, this.settings.localDebounceMs);
   }
 
@@ -747,7 +760,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   private async pollImmediately(): Promise<void> {
     this.lastRemotePollAt = Date.now();
     if (!this.settings.binding || !this.settings.account || this.settings.pendingReview) return;
-    await this.syncNow().catch(() => undefined);
+    await this.syncQuietly().catch(() => undefined);
   }
 
   private enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
@@ -799,10 +812,19 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   private setStatus(kind: RuntimeStatus["kind"], message: string, errorCode?: string): void {
+    const lastSuccessAt = this.settings.lastSuccessAt;
+    // Emitting an identical status re-renders the whole dashboard for nothing,
+    // which is exactly the flicker a routine background sync used to cause.
+    if (
+      this.status.kind === kind &&
+      this.status.message === message &&
+      this.status.errorCode === errorCode &&
+      this.status.lastSuccessAt === lastSuccessAt
+    ) return;
     this.status = {
       kind,
       message,
-      ...(this.settings.lastSuccessAt ? { lastSuccessAt: this.settings.lastSuccessAt } : {}),
+      ...(lastSuccessAt ? { lastSuccessAt } : {}),
       ...(errorCode ? { errorCode } : {})
     };
     if (this.statusBar) this.statusBar.setText(`Constellation: ${message}`);

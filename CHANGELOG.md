@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2 — Quiet automatic syncs
+
+- A routine background check that finds no changes is now fully silent: it no longer writes `data.json`, re-renders the dashboard (the flicker on every poll), or logs a "No changes" activity entry. Manual "Sync now" still reports "Up to date".
+- "Last successful sync" now refers to the last time real changes were carried over, not the time of the most recent no-change check.
+- Scheduled syncs (60 s polling by default, 30 s after edits, on window focus) no longer flip the status text or flash the buttons; only genuine changes update the UI.
+- Identical status updates are skipped instead of re-rendering the whole dashboard.
+
 ## 0.2.1 — Bind the default branch as a vault
 
 - The first-run setup now offers to use the repository's default branch (for example main) as the vault root — the simple choice for a dedicated repository — alongside creating a new branch and joining an existing one.
