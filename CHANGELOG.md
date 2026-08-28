@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6 — Settings toggles render as toggles
+
+- Scope and qualify the switch selectors so they outrank Obsidian's rules for a bare `input[type="checkbox"]`. The attribute selector had been winning, so a checked row drew Obsidian's accent circle while the plugin's transform dragged its checkmark outside the control.
+- Clear the core checkbox marker, including its mask, and take the track and thumb colours from Obsidian's own toggle variables so the row matches the surrounding app in any theme.
+
 ## 0.1.5 — Sync durability and safety fixes
 
 - Apply conflict copies and merged files only after the remote commit succeeds, so a failed push leaves the vault exactly as the user left it instead of overwriting local edits and discarding the conflict record.

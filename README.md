@@ -47,7 +47,7 @@ The GitHub App needs only repository Contents read/write permission. Enable Devi
 
 ## Status
 
-Version `0.1.5` makes a failed push leave the vault untouched, keeps one unportable filename from stalling the whole vault, and requires an explicit choice before a device binds to a vault branch. Live OAuth integration uses a public GitHub App Client ID; no client secret is embedded in the plugin.
+Version `0.1.6` is the current release: a failed push leaves the vault untouched, one unportable filename cannot stall the whole vault, a device binds to a vault branch only from an explicit choice, and the settings toggles render as toggles. Live OAuth integration uses a public GitHub App Client ID; no client secret is embedded in the plugin.
 
 ## License
 
