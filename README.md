@@ -2,7 +2,24 @@
 
 # Constellation Sync
 
+[![CI](https://github.com/RexVane/obsidian-constellation-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/RexVane/obsidian-constellation-sync/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/RexVane/obsidian-constellation-sync)](https://github.com/RexVane/obsidian-constellation-sync/releases/latest)
+[![License](https://img.shields.io/github/license/RexVane/obsidian-constellation-sync)](LICENSE)
+![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-7c3aed)
+
 Constellation Sync is an Obsidian community plugin for synchronizing multiple vaults through independent branches in one private GitHub repository.
+
+## Install
+
+1. **From Obsidian** — Community plugins → Browse → search for "Constellation Sync" (available once the plugin is listed).
+2. **With BRAT** — install BRAT, run "BRAT: Add a beta plugin", enter `RexVane/obsidian-constellation-sync`, then enable the plugin.
+3. **Manually** — download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/RexVane/obsidian-constellation-sync/releases/latest) into `<vault>/.obsidian/plugins/constellation-sync/`, then enable the plugin.
+
+## Quick start
+
+1. Open the dashboard from the orbit ribbon icon and connect with a GitHub token — the sign-in screen spells out exactly which token type and which permissions to choose. A dedicated **private** repository is required.
+2. Select the repository, then bind the vault: use the repository's default branch, create a new branch, or join an existing one.
+3. Done. Sync runs automatically; conflicting edits are preserved as conflict copies and never silently overwritten.
 
 ## Data model
 
@@ -26,7 +43,7 @@ The plugin connects with a GitHub personal access token that you create once and
 
 This repository intentionally contains no user tokens, client secrets, local vault data or `.env.local` files. Compiled `main.js` is kept out of the source branch and attached only to versioned GitHub Releases.
 
-## Installing the development build
+## Build from source
 
 1. Download or clone this repository.
 2. Install Node.js 20 or newer and run `npm ci`.
@@ -40,7 +57,7 @@ The public repository is source-first. Community-plugin releases contain the con
 1. Run `npm install`.
 2. Run `npm run dev` for a watch build or `npm run check` for the complete verification suite.
 
-No build variables are required: the plugin contains no OAuth client ID, no client secret and no GitHub App configuration. See [`docs/github-token-setup.md`](docs/github-token-setup.md) and [`docs/testing.md`](docs/testing.md) for configuration and testing steps.
+No build variables are required: the plugin contains no OAuth client ID, no client secret and no GitHub App configuration. See [`docs/github-token-setup.md`](docs/github-token-setup.md) for token setup steps.
 
 ## Status
 

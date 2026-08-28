@@ -1,0 +1,51 @@
+name: Bug report
+description: Report something broken in the plugin
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please **redact access tokens and private file names** before submitting.
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Shown in Obsidian → Settings → Community plugins, and in the dashboard under Settings → Advanced.
+      placeholder: "0.2.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - iOS
+        - Android
+    validations:
+      required: true
+  - type: dropdown
+    id: token-type
+    attributes:
+      label: Token type
+      options:
+        - Fine-grained token
+        - Classic token
+        - Not signed in yet
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Steps to reproduce, what you expected, and what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant errors
+      description: Messages from the dashboard activity list or the developer console (Ctrl+Shift+I). Redact tokens.
+      render: text

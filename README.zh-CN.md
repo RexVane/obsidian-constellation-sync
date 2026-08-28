@@ -2,7 +2,24 @@
 
 # Constellation Sync
 
+[![CI](https://github.com/RexVane/obsidian-constellation-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/RexVane/obsidian-constellation-sync/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/RexVane/obsidian-constellation-sync)](https://github.com/RexVane/obsidian-constellation-sync/releases/latest)
+[![License](https://img.shields.io/github/license/RexVane/obsidian-constellation-sync)](LICENSE)
+![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-7c3aed)
+
 Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 私有仓库在多台设备之间同步笔记。一个私有仓库可以承载多个笔记库，每个笔记库使用一个独立的 GitHub 分支。
+
+## 安装
+
+1. **从 Obsidian 内** — 第三方插件 → 浏览 → 搜索 "Constellation Sync"（插件上架后可用）。
+2. **通过 BRAT** — 安装 BRAT 后执行 "BRAT: Add a beta plugin"，输入 `RexVane/obsidian-constellation-sync` 并启用插件。
+3. **手动安装** — 从 [最新 Release](https://github.com/RexVane/obsidian-constellation-sync/releases/latest) 下载 `main.js`、`manifest.json` 和 `styles.css`，放入 `<笔记库>/.obsidian/plugins/constellation-sync/` 并启用。
+
+## 快速上手
+
+1. 点击 orbit 图标打开仪表盘，用 GitHub 访问令牌连接——登录页写明了选哪种令牌、需要哪些权限。需要一个专用的**私有**仓库。
+2. 选择仓库后绑定笔记库：直接使用仓库默认分支、新建分支，或加入已有分支。
+3. 完成。同步自动进行；冲突内容会保留为冲突副本，绝不静默覆盖。
 
 ## 数据模型
 
@@ -26,7 +43,7 @@ Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 私有仓库�
 
 本公开仓库不包含用户令牌、Client Secret、本地笔记或 `.env.local`。编译后的 `main.js` 不提交到源码分支，只作为带版本号的 GitHub Release 资产发布。
 
-## 安装开发版
+## 从源码构建
 
 1. 下载或克隆本仓库。
 2. 安装 Node.js 20 或更高版本，执行 `npm ci`。
@@ -40,7 +57,7 @@ Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 私有仓库�
 1. 执行 `npm install`。
 2. 执行 `npm run dev` 进入监听模式构建，或 `npm run check` 运行完整验证套件。
 
-不需要任何构建变量：插件中不含 OAuth Client ID、Client Secret 或 GitHub App 配置。配置与测试步骤请参阅 [`docs/github-token-setup.zh-CN.md`](docs/github-token-setup.zh-CN.md) 和 [`docs/testing.md`](docs/testing.md)。
+不需要任何构建变量：插件中不含 OAuth Client ID、Client Secret 或 GitHub App 配置。令牌配置步骤请参阅 [`docs/github-token-setup.zh-CN.md`](docs/github-token-setup.zh-CN.md)。
 
 ## 状态
 
