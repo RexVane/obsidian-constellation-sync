@@ -269,13 +269,15 @@ function SettingsSections({ snapshot, controller, run, t }: PanelProps): preact.
   const [deviceName, setDeviceName] = useState(settings.deviceName);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
   const [configRows, setConfigRows] = useState<ConfigFileInfo[] | null>(null);
+  const [configScanning, setConfigScanning] = useState(true);
 
   useEffect(() => setName(binding?.branch ?? ""), [binding?.branch]);
   useEffect(() => {
     controller
       .scanConfigFiles()
       .then((rows) => setConfigRows(rows))
-      .catch(() => setConfigRows([]));
+      .catch(() => setConfigRows([]))
+      .finally(() => setConfigScanning(false));
   }, [controller]);
 
   const toggleConfigRow = (path: string): void => {
@@ -288,7 +290,12 @@ function SettingsSections({ snapshot, controller, run, t }: PanelProps): preact.
   };
 
   const rescanConfigRows = async (): Promise<void> => {
-    await run(() => controller.scanConfigFiles().then((rows) => setConfigRows(rows)));
+    setConfigScanning(true);
+    try {
+      await run(() => controller.scanConfigFiles().then((rows) => setConfigRows(rows)));
+    } finally {
+      setConfigScanning(false);
+    }
   };
 
   return (
@@ -331,7 +338,9 @@ function SettingsSections({ snapshot, controller, run, t }: PanelProps): preact.
         <div class="cs-card-header">
           <div><p class="cs-kicker">{t("configSyncTitle")}</p><h2>{t("configSyncHeading")}</h2></div>
           <div class="cs-actions">
-            <button class="cs-button" disabled={busy(snapshot)} onClick={() => void run(() => rescanConfigRows())}><Icon name="refresh-cw" /> {t("configScan")}</button>
+            <button class="cs-button" disabled={busy(snapshot) || configScanning} onClick={() => void run(() => rescanConfigRows())}>
+              <span class={configScanning ? "cs-spin" : ""}><Icon name="refresh-cw" /></span> {t("configScan")}
+            </button>
           </div>
         </div>
         <p class="cs-muted">{t("configSyncHelp")}</p>
@@ -397,10 +406,8 @@ function describeConfigPath(path: string, t: (key: TranslationKey) => string): s
   if (path === "hotkeys.json") return t("configLabelHotkeys");
   if (path === "themes/") return t("configLabelThemes");
   if (path === "snippets/") return t("configLabelSnippets");
-  if (path === "cache/") return t("configLabelCache");
   if (path === "core-plugins.json") return t("configLabelCorePlugins");
   if (path === "community-plugins.json") return t("configLabelCommunityPlugins");
-  if (/^workspace.*\.json$/.test(path)) return t("configLabelWorkspace");
   const pluginData = path.match(/^plugins\/([^/]+)\/data\.json$/);
   if (pluginData) return t("configLabelPluginData").replace("{id}", pluginData[1] ?? "");
   return t("configLabelOther").replace("{path}", path);

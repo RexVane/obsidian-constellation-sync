@@ -11,6 +11,11 @@
 - Workspace layout and cache are always excluded, and plugin code files are never uploaded — only the configuration you explicitly pick.
 - The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
 
+## 0.4.3 — Config picker polish
+
+- Always-excluded entries (workspace layout, cache) no longer clutter the config sync picker; the section help still notes they never sync.
+- The "Scan config files" button now spins its icon while a scan runs.
+
 ## 0.4.2 — Persist a corrected base commit
 
 - A quiet no-change check now persists a corrected base commit (once), so a lagging replica from a previous run cannot keep misclassifying remote configuration changes as conflicts on other devices.

@@ -1,7 +1,7 @@
 {
   "id": "constellation-sync",
   "name": "Constellation Sync",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "minAppVersion": "1.11.4",
   "description": "Synchronize multiple vaults through branches in a private GitHub repository.",
   "author": "Constellation Sync Contributors",

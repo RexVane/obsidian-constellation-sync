@@ -606,6 +606,8 @@
 .cs-muted { color: var(--cs-muted); }
 .cs-icon { display: inline-flex; width: 16px; height: 16px; flex: 0 0 auto; }
 .cs-icon svg { width: 100%; height: 100%; }
+.cs-spin { display: inline-flex; animation: cs-rotate 0.9s linear infinite; }
+@keyframes cs-rotate { to { transform: rotate(360deg); } }
 .constellation-sync-statusbar { cursor: pointer; }
 
 .cs-button:focus-visible,
