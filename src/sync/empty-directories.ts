@@ -1,4 +1,3 @@
-import type { SyncPolicy } from "../types";
 import { shouldSyncPath } from "../utils/path";
 
 export const EMPTY_DIRECTORY_MARKER = ".constellation-sync-empty-folder";
@@ -31,13 +30,12 @@ export function emptyDirectoryFromMarker(path: string): string | null {
 
 export async function reconcileEmptyDirectoryMarkers(
   adapter: DirectoryAdapter,
-  policy: SyncPolicy,
   configDir: string
 ): Promise<string[]> {
   const root = await adapter.list("");
   const markers = new Set<string>();
   for (const folder of root.folders.map(normalize).filter(isVisibleVaultPath).sort()) {
-    await visitDirectory(adapter, folder, policy, configDir, markers);
+    await visitDirectory(adapter, folder, configDir, markers);
   }
   return [...markers].sort();
 }
@@ -57,7 +55,6 @@ export async function removeEmptyDirectoryMarker(adapter: DirectoryAdapter, path
 async function visitDirectory(
   adapter: DirectoryAdapter,
   directory: string,
-  policy: SyncPolicy,
   configDir: string,
   markers: Set<string>
 ): Promise<boolean> {
@@ -66,15 +63,15 @@ async function visitDirectory(
   const normalizedFiles = listing.files.map(normalize);
   const existingMarker = normalizedFiles.includes(markerPath);
   const directFiles = normalizedFiles.filter(
-    (path) => path !== markerPath && isVisibleVaultPath(path) && shouldSyncPath(path, policy, configDir)
+    (path) => path !== markerPath && isVisibleVaultPath(path) && shouldSyncPath(path, configDir)
   );
 
   let childContributes = false;
   for (const folder of listing.folders.map(normalize).filter(isVisibleVaultPath).sort()) {
-    if (await visitDirectory(adapter, folder, policy, configDir, markers)) childContributes = true;
+    if (await visitDirectory(adapter, folder, configDir, markers)) childContributes = true;
   }
 
-  const markerAllowed = shouldSyncPath(markerPath, policy, configDir);
+  const markerAllowed = shouldSyncPath(markerPath, configDir);
   const needsMarker = markerAllowed && directFiles.length === 0 && !childContributes;
   if (needsMarker) {
     if (!existingMarker) await adapter.write(markerPath, "");

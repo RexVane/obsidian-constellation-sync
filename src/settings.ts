@@ -1,13 +1,6 @@
 import { Platform } from "obsidian";
-import type { PluginSettings, SyncPolicy } from "./types";
+import type { PluginSettings, StorageUsage } from "./types";
 import { SCHEMA_VERSION } from "./types";
-
-export const DEFAULT_POLICY: SyncPolicy = {
-  obsidian: {
-    communityPluginData: []
-  },
-  ignorePatterns: []
-};
 
 export const POLL_INTERVAL_MS_OPTIONS = [15_000, 30_000, 60_000, 300_000];
 const DEFAULT_POLL_MS = 15_000;
@@ -22,16 +15,6 @@ export function normalizePollInterval(ms: unknown): number {
   return POLL_INTERVAL_MS_OPTIONS.includes(value) ? value : DEFAULT_POLL_MS;
 }
 
-/**
- * Whether a remote policy read should replace the local one. `policyRevision`
- * only ever increases, so a read reporting less than what this device already
- * accepted came from a replica that has not caught up, and adopting it would
- * roll a just-made change back.
- */
-export function shouldAdoptRemotePolicy(remoteRevision: number, acceptedRevision: number | undefined): boolean {
-  return remoteRevision >= (acceptedRevision ?? 0);
-}
-
 export function createDefaultSettings(): PluginSettings {
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -42,7 +25,6 @@ export function createDefaultSettings(): PluginSettings {
     remotePollMs: DEFAULT_POLL_MS,
     deviceId: crypto.randomUUID(),
     deviceName: defaultDeviceName(),
-    policy: structuredClone(DEFAULT_POLICY),
     baseManifest: {},
     conflicts: [],
     activity: [],
@@ -54,32 +36,31 @@ export function loadSettings(raw: unknown): PluginSettings {
   const defaults = createDefaultSettings();
   if (!raw || typeof raw !== "object") return defaults;
 
-  const value = raw as Partial<PluginSettings>;
-  const obsidian = value.policy?.obsidian;
+  const value = raw as Partial<PluginSettings> & { policy?: unknown };
+  delete value.policy;
+
+  const storageUsage = parseStorageUsage(value.storageUsage);
+
   return {
     ...defaults,
     ...value,
     schemaVersion: SCHEMA_VERSION,
     remotePollMs: normalizePollInterval(value.remotePollMs),
-    policy: {
-      obsidian: {
-        ...defaults.policy.obsidian,
-        ...obsidian,
-        communityPluginData: Array.isArray(obsidian?.communityPluginData)
-          ? obsidian.communityPluginData.filter((item): item is string => typeof item === "string")
-          : []
-      },
-      ignorePatterns: Array.isArray(value.policy?.ignorePatterns)
-        ? value.policy.ignorePatterns.filter((item): item is string => typeof item === "string")
-        : []
-    },
-    baseManifest: value.baseManifest ?? {},
     conflicts: Array.isArray(value.conflicts) ? value.conflicts.slice(-200) : [],
     activity: Array.isArray(value.activity) ? value.activity.slice(-500) : [],
     skippedFiles: Array.isArray(value.skippedFiles)
       ? value.skippedFiles.filter((item): item is string => typeof item === "string")
-      : []
+      : [],
+    ...(storageUsage ? { storageUsage } : {})
   };
+}
+
+function parseStorageUsage(raw: unknown): StorageUsage | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Partial<StorageUsage>;
+  if (typeof value.sizeKb !== "number" || !Number.isFinite(value.sizeKb) || value.sizeKb < 0) return null;
+  if (typeof value.checkedAt !== "string" || Number.isNaN(Date.parse(value.checkedAt))) return null;
+  return { sizeKb: value.sizeKb, checkedAt: value.checkedAt };
 }
 
 function defaultDeviceName(): string {

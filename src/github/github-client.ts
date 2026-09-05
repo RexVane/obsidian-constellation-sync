@@ -66,7 +66,7 @@ export class GitHubClient {
     return { login: data.login, ...(data.avatar_url ? { avatarUrl: data.avatar_url } : {}) };
   }
 
-  async listAccessiblePrivateRepositories(): Promise<RepositoryRef[]> {
+  async listAccessibleRepositories(): Promise<RepositoryRef[]> {
     const repositories: RepositoryRef[] = [];
     let page = 1;
     while (true) {
@@ -80,9 +80,8 @@ export class GitHubClient {
           default_branch: string;
           owner: { login: string };
         }>
-      >(`/user/repos?visibility=private&per_page=100&page=${page}`);
+      >(`/user/repos?visibility=all&per_page=100&page=${page}`);
       for (const repository of data) {
-        if (!repository.private) continue;
         repositories.push({
           id: repository.id,
           nodeId: repository.node_id,
@@ -187,10 +186,7 @@ export class GitHubClient {
     if (
       value.schemaVersion !== SCHEMA_VERSION ||
       !value.vaultId ||
-      !value.englishName ||
-      !value.syncPolicy ||
-      !value.syncPolicy.obsidian ||
-      !Array.isArray(value.syncPolicy.ignorePatterns)
+      !value.englishName
     ) return null;
     return value;
   }
@@ -387,12 +383,11 @@ export class GitHubClient {
     });
   }
 
-  async getFileAtCommit(repository: RepositoryRef, path: string, commitOid: string): Promise<Uint8Array> {
-    const data = await this.api<{ type: string; content: string; encoding: string }>(
-      `${repoPath(repository)}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(commitOid)}`
-    );
-    if (data.type !== "file" || data.encoding !== "base64") throw new GitHubApiError("Historical path is not a file.", 422, "not-a-file");
-    return base64ToBytes(data.content);
+  /** GitHub reports whole-repo size in KB (all branches and history); the value updates asynchronously. */
+  async getRepositorySize(repository: RepositoryRef): Promise<number> {
+    const data = await this.api<{ size: number }>(repoPath(repository));
+    if (typeof data.size !== "number") throw new GitHubApiError("Repository size unavailable.", 422, "no-repo-size");
+    return data.size;
   }
 
   private async getTree(repository: RepositoryRef, oid: string, recursive: boolean): Promise<TreeResponse> {

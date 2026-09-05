@@ -1,5 +1,5 @@
 import { normalizePath, TFile, type App } from "obsidian";
-import type { SnapshotManifest, SyncPolicy } from "../types";
+import type { SnapshotManifest } from "../types";
 import { gitBlobOid } from "../utils/hash";
 import { findPortableCollisions, shouldSyncPath, validatePortablePath } from "../utils/path";
 import {
@@ -15,7 +15,7 @@ export interface LocalScan {
 
 export interface VaultStore {
   configDir(): string;
-  scan(policy: SyncPolicy): Promise<LocalScan>;
+  scan(): Promise<LocalScan>;
   read(path: string): Promise<Uint8Array>;
   write(path: string, bytes: Uint8Array): Promise<void>;
   remove(path: string): Promise<void>;
@@ -40,20 +40,16 @@ export class ObsidianVaultStore implements VaultStore {
     return this.app.vault.configDir;
   }
 
-  async scan(policy: SyncPolicy): Promise<LocalScan> {
+  async scan(): Promise<LocalScan> {
     const configDir = this.configDir();
-    const emptyDirectoryMarkers = await reconcileEmptyDirectoryMarkers(this.app.vault.adapter, policy, configDir);
+    const emptyDirectoryMarkers = await reconcileEmptyDirectoryMarkers(this.app.vault.adapter, configDir);
     const paths = new Set(
       this.app.vault
         .getFiles()
         .map((file) => file.path)
-        .filter((path) => !isEmptyDirectoryMarker(path) && shouldSyncPath(path, policy, configDir))
+        .filter((path) => !isEmptyDirectoryMarker(path) && shouldSyncPath(path, configDir))
     );
     for (const marker of emptyDirectoryMarkers) paths.add(marker);
-    if (policy.obsidian.communityPluginData.length > 0) {
-      await this.collectAdapterFiles(configDir, paths, policy);
-    }
-
     const blockedPaths: string[] = [];
     for (const path of paths) {
       if (validatePortablePath(path).length > 0) blockedPaths.push(path);
@@ -143,15 +139,6 @@ export class ObsidianVaultStore implements VaultStore {
 
   async exists(path: string): Promise<boolean> {
     return this.app.vault.adapter.exists(normalizePath(path));
-  }
-
-  private async collectAdapterFiles(directory: string, output: Set<string>, policy: SyncPolicy): Promise<void> {
-    if (!(await this.app.vault.adapter.exists(directory))) return;
-    const listing = await this.app.vault.adapter.list(directory);
-    for (const file of listing.files) {
-      if (shouldSyncPath(file, policy, this.configDir())) output.add(file);
-    }
-    for (const folder of listing.folders) await this.collectAdapterFiles(folder, output, policy);
   }
 
   private async ensureParent(path: string): Promise<void> {

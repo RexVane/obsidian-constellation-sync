@@ -43,21 +43,7 @@ export interface RepositoryBinding {
   vaultId: string;
   branch: string;
   baseCommitOid?: string;
-  /**
-   * Highest `policyRevision` this device has accepted. A remote read reporting
-   * a lower revision is a stale replica, not an authoritative change.
-   */
-  policyRevision?: number;
   boundAt: string;
-}
-
-export interface ObsidianSyncPolicy {
-  communityPluginData: string[];
-}
-
-export interface SyncPolicy {
-  obsidian: ObsidianSyncPolicy;
-  ignorePatterns: string[];
 }
 
 export interface VaultMetadata {
@@ -66,8 +52,6 @@ export interface VaultMetadata {
   englishName: string;
   createdAt: string;
   updatedAt: string;
-  policyRevision: number;
-  syncPolicy: SyncPolicy;
 }
 
 export interface SnapshotEntry {
@@ -172,7 +156,6 @@ export interface PluginSettings {
   deviceName: string;
   account?: GitHubAccount;
   binding?: RepositoryBinding;
-  policy: SyncPolicy;
   baseManifest: SnapshotManifest;
   pendingReview?: PendingReview;
   conflicts: ConflictRecord[];
@@ -180,6 +163,14 @@ export interface PluginSettings {
   /** Paths the last run left untouched because they cannot sync safely everywhere. */
   skippedFiles: string[];
   lastSuccessAt?: string;
+  /** Whole-repo size sampled from GitHub for the dashboard storage gauge. */
+  storageUsage?: StorageUsage;
+}
+
+export interface StorageUsage {
+  /** Whole repository size in kilobytes, as reported by GitHub. */
+  sizeKb: number;
+  checkedAt: string;
 }
 
 export interface BranchSummary {

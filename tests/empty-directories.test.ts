@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_POLICY } from "../src/settings";
+
 import {
   EMPTY_DIRECTORY_MARKER,
   type DirectoryAdapter,
@@ -80,7 +80,7 @@ describe("empty directory markers", () => {
       [["全栈/with-note/note.md", "note"]]
     );
 
-    const markers = await reconcileEmptyDirectoryMarkers(adapter, structuredClone(DEFAULT_POLICY), ".obsidian");
+    const markers = await reconcileEmptyDirectoryMarkers(adapter,".obsidian");
 
     expect(markers).toEqual([
       `全栈/empty/${EMPTY_DIRECTORY_MARKER}`,
@@ -90,21 +90,11 @@ describe("empty directory markers", () => {
     expect([...adapter.files.keys()].some((path) => path.startsWith(".obsidian/"))).toBe(false);
 
     await adapter.write("全栈/empty/new.md", "new");
-    const refreshed = await reconcileEmptyDirectoryMarkers(adapter, structuredClone(DEFAULT_POLICY), ".obsidian");
+    const refreshed = await reconcileEmptyDirectoryMarkers(adapter,".obsidian");
     expect(refreshed).not.toContain(`全栈/empty/${EMPTY_DIRECTORY_MARKER}`);
     expect(adapter.files.has(`全栈/empty/${EMPTY_DIRECTORY_MARKER}`)).toBe(false);
   });
 
-  it("respects ignore rules when preserving empty directories", async () => {
-    const adapter = new MemoryDirectoryAdapter(["全栈/ignored"]);
-    const policy = structuredClone(DEFAULT_POLICY);
-    policy.ignorePatterns = ["全栈/**"];
-
-    const markers = await reconcileEmptyDirectoryMarkers(adapter, policy, ".obsidian");
-
-    expect(markers).toEqual([]);
-    expect(adapter.files.size).toBe(0);
-  });
 
   it("removes the local empty directory chain when a remote marker is deleted", async () => {
     const marker = `全栈/parent/leaf/${EMPTY_DIRECTORY_MARKER}`;

@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/github/license/RexVane/obsidian-constellation-sync)](LICENSE)
 ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-7c3aed)
 
-Constellation Sync is an Obsidian community plugin for synchronizing multiple vaults through independent branches in one private GitHub repository.
+Constellation Sync is an Obsidian community plugin for synchronizing multiple vaults through independent branches in one dedicated GitHub repository. Private repositories are recommended; public repositories are supported with an explicit visibility warning.
 
 ## Screenshots
 
@@ -23,13 +23,13 @@ Constellation Sync is an Obsidian community plugin for synchronizing multiple va
 
 ## Quick start
 
-1. Open the dashboard from the orbit ribbon icon and connect with a GitHub token — the sign-in screen spells out exactly which token type and which permissions to choose. A dedicated **private** repository is required.
+1. Open the dashboard from the orbit ribbon icon and connect with a GitHub token — the sign-in screen spells out exactly which token type and which permissions to choose. A dedicated repository is required; private is recommended, and public repositories carry an in-app visibility warning.
 2. Select the repository, then bind the vault: use the repository's default branch, create a new branch, or join an existing one.
 3. Done. Sync runs automatically; conflicting edits are preserved as conflict copies and never silently overwritten.
 
 ## Data model
 
-- One dedicated private GitHub repository can contain multiple vaults.
+- One dedicated GitHub repository can contain multiple vaults. Private is recommended; if you pick a public repository, everything synced becomes publicly visible.
 - Each vault lives at the root of one non-default branch.
 - The branch name is the vault's shared English name, such as `work-notes`.
 - `.constellation-sync/vault.json` stores a stable `vaultId`, so devices can follow branch renames safely.
@@ -67,7 +67,7 @@ No build variables are required: the plugin contains no OAuth client ID, no clie
 
 ## Status
 
-Version `0.2.3` is the current release: connecting is a matter of creating a GitHub token and pasting it in, with the creation steps spelled out in the login screen. First-time binding can use the repository's default branch, a new branch, or an existing vault branch. Background checks run silently every 15 seconds by default (configurable in Settings) and stay invisible when nothing changed, so "last successful sync" only counts real change transfers.
+Version `0.3.0` is the current release: connecting is a matter of creating a GitHub token and pasting it in, with the creation steps spelled out in the login screen. First-time binding can use the repository's default branch, a new branch, or an existing vault branch. Background checks run silently every 15 seconds by default (configurable in Settings) and stay invisible when nothing changed, so "last successful sync" only counts real change transfers.
 
 ## License
 

@@ -33,7 +33,6 @@ export interface DashboardController {
   approvePendingSync(): Promise<void>;
   cancelPendingSync(): Promise<void>;
   resolveConflict(id: string): Promise<void>;
-  restoreFile(path: string, commitOid: string): Promise<void>;
   updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs">(
     key: K,
     value: K extends "autoSync" | "paused"
@@ -44,8 +43,6 @@ export interface DashboardController {
           ? number
           : string
   ): Promise<void>;
-  updateIgnorePatterns(value: string): Promise<void>;
-  updateCommunityPluginData(pluginIds: string[]): Promise<void>;
   disconnectVault(): Promise<void>;
   signOut(): Promise<void>;
 }

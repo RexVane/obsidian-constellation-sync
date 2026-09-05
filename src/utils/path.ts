@@ -1,5 +1,3 @@
-import type { SyncPolicy } from "../types";
-
 const ALWAYS_EXCLUDED = [
   ".git/**",
   ".trash/**",
@@ -29,27 +27,15 @@ export function isAlwaysExcluded(path: string, configDir: string): boolean {
   return [...ALWAYS_EXCLUDED, ...configPatterns].some((pattern) => globToRegExp(pattern).test(normalized));
 }
 
-export function shouldSyncPath(path: string, policy: SyncPolicy, configDir: string): boolean {
+export function shouldSyncPath(path: string, configDir: string): boolean {
   const normalized = normalizeRepoPath(path);
   const configRoot = normalizeConfigDir(configDir);
   if (isAlwaysExcluded(normalized, configRoot)) return false;
 
   const configPrefix = `${configRoot}/`;
-  if (normalized.startsWith(configPrefix)) {
-    // Only explicitly listed community-plugin data leaves the config directory.
-    const pluginId = communityPluginId(normalized.slice(configPrefix.length));
-    if (!pluginId || !policy.obsidian.communityPluginData.includes(pluginId)) return false;
-  }
+  if (normalized.startsWith(configPrefix)) return false;
 
-  let included = true;
-  for (const line of policy.ignorePatterns) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const negate = trimmed.startsWith("!");
-    const pattern = negate ? trimmed.slice(1) : trimmed;
-    if (pattern && globToRegExp(pattern).test(normalized)) included = negate;
-  }
-  return included && !isAlwaysExcluded(normalized, configRoot);
+  return true;
 }
 
 export function validatePortablePath(path: string): string[] {
@@ -96,11 +82,6 @@ export function globToRegExp(pattern: string): RegExp {
     }
   }
   return new RegExp(`${output}$`);
-}
-
-function communityPluginId(path: string): string | null {
-  const match = /^plugins\/([^/]+)\/(?:data\.json|.+\.(?:json|db))$/.exec(path);
-  return match?.[1] ?? null;
 }
 
 function normalizeConfigDir(input: string): string {

@@ -2,7 +2,7 @@ import { Notice, Plugin } from "obsidian";
 import { GitHubAuth, GitHubAuthError, type SecretStore } from "./auth/github-auth";
 import type { DashboardController, DashboardSnapshot } from "./controller";
 import { GitHubApiError, GitHubClient, isStaleHeadError } from "./github/github-client";
-import { createDefaultSettings, loadSettings, normalizePollInterval, shouldAdoptRemotePolicy } from "./settings";
+import { createDefaultSettings, loadSettings, normalizePollInterval } from "./settings";
 import { SyncChangedDuringRunError, SyncEngine, SyncReviewRequiredError } from "./sync/engine";
 import { ObsidianVaultStore } from "./sync/vault-store";
 import {
@@ -13,13 +13,14 @@ import {
   type RepositoryRef,
   type RuntimeStatus,
   type SyncApproval,
-  type SyncPolicy,
   type VaultMetadata
 } from "./types";
 import { branchFromEnglishName, slugifyEnglishName, validateBranchName } from "./utils/branch";
-import { normalizeRepoPath, shouldSyncPath } from "./utils/path";
+
 import { ConstellationDashboardView, DASHBOARD_VIEW_TYPE } from "./ui/dashboard-view";
 import { ConstellationSettingTab } from "./ui/settings-tab";
+
+const STORAGE_REFRESH_MS = 10 * 60_000;
 
 export default class ConstellationSyncPlugin extends Plugin implements DashboardController {
   override settings: PluginSettings = createDefaultSettings();
@@ -135,16 +136,16 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   async refreshRepositories(): Promise<void> {
-    this.setStatus("scanning", "Loading private repositories…");
+    this.setStatus("scanning", "Loading repositories…");
     try {
-      const repositories = await this.github.listAccessiblePrivateRepositories();
+      const repositories = await this.github.listAccessibleRepositories();
       this.repositories = repositories.sort((left, right) => left.fullName.localeCompare(right.fullName));
       if (this.selectedRepository) {
         const nextSelected = this.repositories.find((item) => item.id === this.selectedRepository?.id);
         if (nextSelected) this.selectedRepository = nextSelected;
         else delete this.selectedRepository;
       }
-      this.setStatus("idle", `Found ${this.repositories.length} private repositories`);
+      this.setStatus("idle", `Found ${this.repositories.length} repositories`);
     } catch (error) {
       this.handleError(error);
       throw error;
@@ -156,7 +157,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   private async selectRepositoryInternal(repository: RepositoryRef): Promise<void> {
-    if (!repository.private) throw new Error("Constellation Sync refuses public repositories.");
     this.selectedRepository = repository;
     this.setStatus("scanning", `Scanning ${repository.fullName}…`);
     try {
@@ -177,7 +177,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   private async createVaultInternal(repository: RepositoryRef, englishName: string): Promise<void> {
-    if (!repository.private) throw new Error("Constellation Sync refuses public repositories.");
     if (this.settings.binding) throw new Error("This Obsidian vault is already bound to a GitHub branch.");
     const branch = branchFromEnglishName(englishName, repository.defaultBranch);
     const branches = await this.github.listBranches(repository);
@@ -189,8 +188,8 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       englishName: branch,
       createdAt: now,
       updatedAt: now,
-      policyRevision: 1,
-      syncPolicy: structuredClone(this.settings.policy)
+
+
     };
     this.setStatus("syncing", `Creating ${branch}…`);
     try {
@@ -203,10 +202,10 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
         repository,
         vaultId: existing.vaultId,
         branch,
-        policyRevision: existing.policyRevision,
+
         boundAt: new Date().toISOString()
       };
-      this.settings.policy = structuredClone(existing.syncPolicy);
+
       this.settings.baseManifest = {};
       delete this.settings.pendingReview;
       this.addActivity("bind", `Joined existing vault branch ${branch}`);
@@ -218,7 +217,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       repository,
       vaultId: metadata.vaultId,
       branch,
-      policyRevision: metadata.policyRevision,
+
       boundAt: now
     };
     this.settings.baseManifest = {};
@@ -233,21 +232,20 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   private async useDefaultBranchInternal(repository: RepositoryRef): Promise<void> {
-    if (!repository.private) throw new Error("Constellation Sync refuses public repositories.");
     if (this.settings.binding) throw new Error("This Obsidian vault is already bound to a GitHub branch.");
     const branch = repository.defaultBranch;
     this.setStatus("syncing", `Using ${branch} as the vault…`);
     const now = new Date().toISOString();
     let vaultId: string;
-    let policyRevision: number;
-    let policy: SyncPolicy;
+
+
     // Another device may already have turned the default branch into the vault;
     // in that case this is a join, not a creation.
     const existing = await this.github.getVaultMetadata(repository, branch);
     if (existing) {
       vaultId = existing.vaultId;
-      policyRevision = existing.policyRevision;
-      policy = structuredClone(existing.syncPolicy);
+
+
       this.addActivity("bind", `Joined vault branch ${branch}`);
     } else {
       const metadata: VaultMetadata = {
@@ -256,27 +254,27 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
         englishName: branch,
         createdAt: now,
         updatedAt: now,
-        policyRevision: 1,
-        syncPolicy: structuredClone(this.settings.policy)
+
+
       };
       await this.github.createVaultOnDefaultBranch(repository, metadata);
       vaultId = metadata.vaultId;
-      policyRevision = metadata.policyRevision;
-      policy = structuredClone(metadata.syncPolicy);
+
+
       // The metadata check and the marker commit are not atomic. If another
       // device claimed the branch in between, follow the winner's identity.
       const committed = await this.github.getVaultMetadata(repository, branch);
       if (committed && committed.vaultId !== metadata.vaultId) {
         this.addActivity("warning", `Another device bound ${branch} at the same time; following its vault identity`);
         vaultId = committed.vaultId;
-        policyRevision = committed.policyRevision;
-        policy = structuredClone(committed.syncPolicy);
+
+
       } else {
         this.addActivity("bind", `Using ${branch} as the vault`);
       }
     }
-    this.settings.binding = { repository, vaultId, branch, policyRevision, boundAt: now };
-    this.settings.policy = policy;
+    this.settings.binding = { repository, vaultId, branch, boundAt: now };
+
     this.settings.baseManifest = {};
     delete this.settings.pendingReview;
     await this.saveSettings();
@@ -288,7 +286,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   private async joinVaultInternal(repository: RepositoryRef, vault: RemoteVaultSummary): Promise<void> {
-    if (!repository.private) throw new Error("Constellation Sync refuses public repositories.");
     if (this.settings.binding) throw new Error("This Obsidian vault is already bound to a GitHub branch.");
     const canonical = await this.github.findVaultById(repository, vault.metadata.vaultId);
     if (!canonical) throw new Error("The selected vault branch no longer exists.");
@@ -296,10 +293,10 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       repository,
       vaultId: canonical.metadata.vaultId,
       branch: canonical.branch.name,
-      policyRevision: canonical.metadata.policyRevision,
+
       boundAt: new Date().toISOString()
     };
-    this.settings.policy = structuredClone(canonical.metadata.syncPolicy);
+
     this.settings.baseManifest = {};
     delete this.settings.pendingReview;
     this.addActivity("bind", `Joined vault branch ${canonical.branch.name}`);
@@ -363,7 +360,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     if (!pending) return;
     try {
       const binding = await this.reconcileBinding();
-      const fresh = await this.engine.createPlan(binding, this.settings.policy, this.settings.baseManifest);
+      const fresh = await this.engine.createPlan(binding, this.settings.baseManifest);
       if (fresh.id !== pending.id) {
         if (fresh.operations.length === 0 && fresh.largeFileWarnings.length === 0 && !fresh.deletionGuardTriggered) {
           // A previous attempt may have committed successfully before the final
@@ -416,25 +413,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     this.setStatus(this.settings.conflicts.some((item) => !item.resolved) ? "conflict" : "idle", "Conflict status updated");
   }
 
-  async restoreFile(path: string, commitOid: string): Promise<void> {
-    return this.enqueueOperation(() => this.restoreFileInternal(path, commitOid));
-  }
-
-  private async restoreFileInternal(path: string, commitOid: string): Promise<void> {
-    const binding = this.requireBinding();
-    if (this.settings.pendingReview) throw new Error("Complete or cancel the pending sync before restoring a file.");
-    const normalized = normalizeRepoPath(path);
-    if (!shouldSyncPath(normalized, this.settings.policy, this.app.vault.configDir)) {
-      throw new Error("That path is outside the enabled sync policy.");
-    }
-    const bytes = await this.github.getFileAtCommit(binding.repository, normalized, commitOid);
-    await this.vaultStore.write(normalized, bytes);
-    this.addActivity("restore", `Restored ${normalized} from ${commitOid.slice(0, 8)}`);
-    await this.saveSettings();
-    // Already inside the queue, so publish through performSync directly.
-    await this.performSync();
-  }
-
   async updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs">(
     key: K,
     value: K extends "autoSync" | "paused"
@@ -473,24 +451,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     await this.saveSettings();
     this.setStatus(this.settings.paused ? "paused" : "idle", this.settings.paused ? "Paused" : "Ready");
     if (key === "autoSync" && value === true) this.scheduleLocalSync();
-  }
-
-  async updateIgnorePatterns(value: string): Promise<void> {
-    return this.enqueueOperation(() => {
-      const next = structuredClone(this.settings.policy);
-      next.ignorePatterns = value.split(/\r?\n/).map((line) => line.trimEnd());
-      return this.persistSharedPolicy(next);
-    });
-  }
-
-  async updateCommunityPluginData(pluginIds: string[]): Promise<void> {
-    return this.enqueueOperation(() => {
-      const next = structuredClone(this.settings.policy);
-      next.obsidian.communityPluginData = [
-        ...new Set(pluginIds.map((id) => id.trim()).filter((id) => id.length > 0))
-      ].sort();
-      return this.persistSharedPolicy(next);
-    });
   }
 
   async disconnectVault(): Promise<void> {
@@ -532,16 +492,34 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       await this.saveSettings();
       if (this.settings.binding && !this.settings.paused) await this.pollImmediately();
       else await this.refreshRepositories();
+      this.maybeRefreshStorageUsage();
     } catch (error) {
       this.handleError(error);
     }
+  }
+
+  private maybeRefreshStorageUsage(): void {
+    if (!this.settings.binding || !this.settings.account) return;
+    const checkedAt = this.settings.storageUsage?.checkedAt;
+    if (checkedAt && Date.now() - Date.parse(checkedAt) < STORAGE_REFRESH_MS) return;
+    void this.enqueueOperation(async () => {
+      try {
+        const binding = this.settings.binding;
+        if (!binding) return;
+        const sizeKb = await this.github.getRepositorySize(binding.repository);
+        this.settings.storageUsage = { sizeKb, checkedAt: new Date().toISOString() };
+        await this.saveSettings();
+      } catch {
+        // The gauge is informational; API failures surface through normal sync handling.
+      }
+    });
   }
 
   private async recoverPendingSyncAfterRemoteChange(): Promise<void> {
     const pending = this.settings.pendingReview?.plan;
     if (!pending) return;
     const binding = await this.reconcileBinding();
-    const fresh = await this.engine.createPlan(binding, this.settings.policy, this.settings.baseManifest);
+    const fresh = await this.engine.createPlan(binding, this.settings.baseManifest);
     if (fresh.operations.length === 0 && fresh.largeFileWarnings.length === 0 && !fresh.deletionGuardTriggered) {
       await this.executePlan(binding, fresh, {
         planId: fresh.id,
@@ -570,7 +548,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     try {
       if (!quiet) this.setStatus("scanning", "Comparing local and remote files…");
       const binding = await this.reconcileBinding();
-      const plan = await this.engine.createPlan(binding, this.settings.policy, this.settings.baseManifest);
+      const plan = await this.engine.createPlan(binding, this.settings.baseManifest);
       // Skipped files are reported, never a gate: a single unportable name used
       // to hold the entire vault hostage with no way to proceed.
       const reviewRequired =
@@ -613,7 +591,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     quiet = false
   ): Promise<void> {
     if (!quiet) this.setStatus("syncing", "Synchronizing files…");
-    const execution = await this.engine.execute(binding, this.settings.policy, plan, approval, this.settings.deviceName);
+    const execution = await this.engine.execute(binding, plan, approval, this.settings.deviceName);
     binding.baseCommitOid = execution.baseCommitOid;
     this.settings.baseManifest = execution.manifest;
     this.reportSkippedFiles(plan.blockedFiles);
@@ -637,6 +615,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     this.addActivity("sync", `Synchronized ${plan.operations.length} changes`, execution.result.commitOid, plan.summary);
     await this.saveSettings();
     this.setStatus(unresolved ? "conflict" : "idle", message);
+    this.maybeRefreshStorageUsage();
   }
 
   private reportSkippedFiles(paths: string[]): void {
@@ -652,7 +631,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     const binding = this.requireBinding();
     const canonical = await this.github.getRepository(binding.repository.owner, binding.repository.name);
     if (canonical.id !== binding.repository.id) throw new Error("The bound repository identity changed.");
-    if (!canonical.private) throw new Error("The bound repository is public. Synchronization is blocked.");
     binding.repository = canonical;
 
     let branch = binding.branch;
@@ -680,13 +658,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
 
     const metadata = await this.github.getVaultMetadata(binding.repository, branch);
     if (!metadata || metadata.vaultId !== binding.vaultId) throw new Error("The remote vault marker does not match this local binding.");
-    // A contents read can lag behind a policy commit this device just made. Only
-    // a revision at least as high as the one already accepted is authoritative;
-    // anything lower is a stale replica and must not roll the policy back.
-    if (shouldAdoptRemotePolicy(metadata.policyRevision, binding.policyRevision)) {
-      this.settings.policy = structuredClone(metadata.syncPolicy);
-      binding.policyRevision = metadata.policyRevision;
-    }
     if (metadata.englishName !== branch) {
       const repaired = await this.commitVaultMetadata(binding, (current) => {
         current.englishName = branch;
@@ -699,30 +670,8 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     return binding;
   }
 
-  private async persistSharedPolicy(next: SyncPolicy): Promise<void> {
-    const binding = this.settings.binding;
-    if (!binding) {
-      this.settings.policy = next;
-      await this.saveSettings();
-      return;
-    }
-    if (this.settings.pendingReview) throw new Error("Complete or cancel the pending sync before changing shared policy.");
-    // The shared marker is the source of truth, so it lands first. Adopting the
-    // change locally before the commit succeeds would leave this device holding
-    // a policy that neither disk nor the remote agrees with.
-    const written = await this.commitVaultMetadata(binding, (metadata) => {
-      metadata.syncPolicy = structuredClone(next);
-      metadata.policyRevision += 1;
-      metadata.updatedAt = new Date().toISOString();
-    });
-    binding.baseCommitOid = written.commitOid;
-    binding.policyRevision = written.metadata.policyRevision;
-    this.settings.policy = next;
-    await this.saveSettings();
-    this.scheduleLocalSync();
-  }
 
-  /**
+   /**
    * Rewrites the shared vault marker. GitHub can report a stale head right after
    * a write, so a rejected commit is re-read and replayed rather than surfaced.
    */

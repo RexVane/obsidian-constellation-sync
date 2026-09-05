@@ -23,11 +23,7 @@ function vaultMetadata(englishName: string): VaultMetadata {
     englishName,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
-    policyRevision: 1,
-    syncPolicy: {
-      obsidian: { communityPluginData: [] },
-      ignorePatterns: []
-    }
+    
   };
 }
 
@@ -39,11 +35,7 @@ describe("GitHub client request contracts", () => {
       englishName: "obsidian-data",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
-      policyRevision: 1,
-      syncPolicy: {
-        obsidian: { communityPluginData: [] },
-        ignorePatterns: []
-      }
+      
     };
     const duplicate: RemoteVaultSummary = {
       branch: { name: "obsidian-vault", protected: false, headOid: "old-head" },
@@ -73,33 +65,34 @@ describe("GitHub client request contracts", () => {
     expect(typeof body === "string" ? JSON.parse(body) : null).toEqual({ new_name: "project-notes" });
   });
 
-  it("lists private repositories through /user/repos with pagination", async () => {
+  it("lists all accessible repositories, private and public, through /user/repos with pagination", async () => {
     const requests: RequestUrlParam[] = [];
-    const pageOf = (count: number, base: number): RequestUrlResponse =>
-      response(
-        Array.from({ length: count }, (_, index) => ({
-          id: base + index,
-          node_id: "node",
-          name: `repo-${base + index}`,
-          full_name: `owner/repo-${base + index}`,
-          private: true,
-          default_branch: "main",
-          owner: { login: "owner" }
-        }))
-      );
-    const queue = [pageOf(100, 1), pageOf(1, 101), response([])];
+    const repo = (id: number, priv: boolean) => ({
+      id,
+      node_id: "node",
+      name: `repo-${id}`,
+      full_name: `owner/repo-${id}`,
+      private: priv,
+      default_branch: "main",
+      owner: { login: "owner" }
+    });
+    const queue = [
+      response(Array.from({ length: 100 }, (_, index) => repo(index + 1, true))),
+      response([repo(101, false)]),
+      response([])
+    ];
     const client = new GitHubClient({ getValidAccessToken: () => "token" } as GitHubAuth, (request) => {
       requests.push(request);
       return Promise.resolve(queue.shift() ?? response([], 500));
     });
 
-    const repositories = await client.listAccessiblePrivateRepositories();
+    const repositories = await client.listAccessibleRepositories();
 
     expect(repositories).toHaveLength(101);
-    expect(repositories[0]?.fullName).toBe("owner/repo-1");
-    expect(repositories[100]?.fullName).toBe("owner/repo-101");
-    expect(requests[0]?.url).toBe("https://api.github.com/user/repos?visibility=private&per_page=100&page=1");
-    expect(requests[1]?.url).toBe("https://api.github.com/user/repos?visibility=private&per_page=100&page=2");
+    expect(repositories[0]).toMatchObject({ fullName: "owner/repo-1", private: true });
+    expect(repositories[100]).toMatchObject({ fullName: "owner/repo-101", private: false });
+    expect(requests[0]?.url).toBe("https://api.github.com/user/repos?visibility=all&per_page=100&page=1");
+    expect(requests[1]?.url).toBe("https://api.github.com/user/repos?visibility=all&per_page=100&page=2");
   });
 
   it("discovers a vault living on the default branch", async () => {
@@ -231,11 +224,7 @@ describe("GitHub client request contracts", () => {
       englishName: "work-notes",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
-      policyRevision: 1,
-      syncPolicy: {
-        obsidian: { communityPluginData: [] },
-        ignorePatterns: []
-      }
+      
     };
 
     await expect(client.createVaultBranch(repository, metadata)).resolves.toBe("vault-head");

@@ -3,8 +3,7 @@ import type { CommitChanges } from "../src/github/github-client";
 import { SyncEngine, type SyncGithubPort } from "../src/sync/engine";
 import { EMPTY_DIRECTORY_MARKER } from "../src/sync/empty-directories";
 import type { LocalScan, VaultStore } from "../src/sync/vault-store";
-import type { RepositoryBinding, SnapshotManifest, SyncPolicy } from "../src/types";
-import { DEFAULT_POLICY } from "../src/settings";
+import type { RepositoryBinding, SnapshotManifest } from "../src/types";
 import { gitBlobOid } from "../src/utils/hash";
 
 class MemoryVault implements VaultStore {
@@ -66,7 +65,7 @@ class MemoryGitHub implements SyncGithubPort {
 
 const repository: RepositoryBinding["repository"] = { id: 1, nodeId: "node", owner: "owner", name: "repo", fullName: "owner/repo", private: true, defaultBranch: "main" };
 const binding: RepositoryBinding = { repository, vaultId: "vault", branch: "work-notes", baseCommitOid: "base", boundAt: new Date().toISOString() };
-const policy: SyncPolicy = structuredClone(DEFAULT_POLICY);
+
 
 describe("sync engine", () => {
   it("downloads an empty-directory marker when another device created the folder", async () => {
@@ -81,11 +80,11 @@ describe("sync engine", () => {
       boundAt: new Date().toISOString()
     };
 
-    const plan = await engine.createPlan(initialBinding, policy, {});
+    const plan = await engine.createPlan(initialBinding, {});
     expect(plan.summary.downloads).toBe(1);
     const execution = await engine.execute(
       initialBinding,
-      policy,
+
       plan,
       { planId: plan.id, confirmInitialMerge: true, confirmMassDeletion: false, confirmLargeFiles: false },
       "laptop"
@@ -99,8 +98,8 @@ describe("sync engine", () => {
     const vault = new MemoryVault(new Map([["local.md", new TextEncoder().encode("local")]]));
     const github = new MemoryGitHub();
     const engine = new SyncEngine(github, vault);
-    const plan = await engine.createPlan(binding, policy, {});
-    const execution = await engine.execute(binding, policy, plan, { planId: plan.id, confirmInitialMerge: true, confirmMassDeletion: false, confirmLargeFiles: false }, "laptop");
+    const plan = await engine.createPlan(binding, {});
+    const execution = await engine.execute(binding, plan, { planId: plan.id, confirmInitialMerge: true, confirmMassDeletion: false, confirmLargeFiles: false }, "laptop");
     expect(github.files.has("local.md")).toBe(true);
     expect(execution.manifest["local.md"]).toBeDefined();
     expect(execution.baseCommitOid).toContain("next");
@@ -114,11 +113,11 @@ describe("sync engine", () => {
     const vault = new MemoryVault(new Map([["note.md", localBytes]]));
     const github = new MemoryGitHub(new Map([["note.md", remoteBytes]]), new Map([["base", baseBytes]]));
     const engine = new SyncEngine(github, vault);
-    const plan = await engine.createPlan(binding, policy, { "note.md": { path: "note.md", oid: baseOid, size: baseBytes.length } });
+    const plan = await engine.createPlan(binding, { "note.md": { path: "note.md", oid: baseOid, size: baseBytes.length } });
 
     github.failCommit = true;
     await expect(
-      engine.execute(binding, policy, plan, { planId: plan.id, confirmInitialMerge: false, confirmMassDeletion: false, confirmLargeFiles: false }, "laptop")
+      engine.execute(binding, plan, { planId: plan.id, confirmInitialMerge: false, confirmMassDeletion: false, confirmLargeFiles: false }, "laptop")
     ).rejects.toThrow(/network down/);
 
     // A conflict copy that nobody recorded is worse than no copy at all, so the
@@ -133,10 +132,10 @@ describe("sync engine", () => {
     vault.blocked.push(unportable);
     const github = new MemoryGitHub();
     const engine = new SyncEngine(github, vault);
-    const plan = await engine.createPlan(binding, policy, {});
+    const plan = await engine.createPlan(binding, {});
     expect(plan.blockedFiles).toEqual([unportable]);
 
-    const execution = await engine.execute(binding, policy, plan, { planId: plan.id, confirmInitialMerge: true, confirmMassDeletion: false, confirmLargeFiles: false }, "laptop");
+    const execution = await engine.execute(binding, plan, { planId: plan.id, confirmInitialMerge: true, confirmMassDeletion: false, confirmLargeFiles: false }, "laptop");
 
     expect(execution.result.kind).toBe("success");
     expect(github.files.has("fine.md")).toBe(true);
@@ -151,10 +150,10 @@ describe("sync engine", () => {
     const vault = new MemoryVault(new Map([["note.md", localBytes]]));
     const github = new MemoryGitHub(new Map([["note.md", remoteBytes]]), new Map([["base", baseBytes]]));
     const engine = new SyncEngine(github, vault);
-    const plan = await engine.createPlan(binding, policy, { "note.md": { path: "note.md", oid: baseOid, size: baseBytes.length } });
+    const plan = await engine.createPlan(binding, { "note.md": { path: "note.md", oid: baseOid, size: baseBytes.length } });
     expect(plan.summary.conflicts).toBe(0);
     expect(plan.summary.merges).toBe(1);
-    const execution = await engine.execute(binding, policy, plan, { planId: plan.id, confirmInitialMerge: false, confirmMassDeletion: false, confirmLargeFiles: false }, "laptop");
+    const execution = await engine.execute(binding, plan, { planId: plan.id, confirmInitialMerge: false, confirmMassDeletion: false, confirmLargeFiles: false }, "laptop");
     expect(execution.conflicts).toHaveLength(1);
     expect([...vault.files.keys()].some((path) => path.startsWith("note.conflict-laptop-"))).toBe(true);
     expect(new TextDecoder().decode(vault.files.get("note.md"))).toBe("one\nREMOTE\nthree");

@@ -9,8 +9,6 @@ export const DASHBOARD_VIEW_TYPE = "constellation-sync-dashboard";
 
 const TOKEN_CREATION_URL = "https://github.com/settings/tokens/new?description=Constellation%20Sync&scopes=repo";
 
-type Page = "overview" | "settings";
-
 export class ConstellationDashboardView extends ItemView {
   constructor(
     leaf: WorkspaceLeaf,
@@ -47,15 +45,7 @@ export class ConstellationDashboardView extends ItemView {
 function Dashboard({ controller }: { controller: DashboardController }): preact.JSX.Element {
   const snapshot = useController(controller);
   const t = translator(snapshot.settings.locale);
-  const [page, setPage] = useState<Page>("overview");
   const [error, setError] = useState<string | null>(null);
-  const hadBinding = useRef(Boolean(snapshot.settings.binding));
-
-  useEffect(() => {
-    const bound = Boolean(snapshot.settings.binding);
-    if (bound && !hadBinding.current) setPage("overview");
-    hadBinding.current = bound;
-  }, [snapshot.settings.binding?.vaultId]);
 
   const run = async (action: () => Promise<void>): Promise<void> => {
     setError(null);
@@ -68,50 +58,27 @@ function Dashboard({ controller }: { controller: DashboardController }): preact.
 
   return (
     <div class="constellation-sync">
-      <header class="cs-mobile-header">
-        <Brand compact />
-        <select value={page} onChange={(event) => setPage(event.currentTarget.value as Page)} aria-label="Navigation">
-          {NAV_ITEMS.map((item) => <option value={item.id}>{t(item.label)}</option>)}
-        </select>
-      </header>
-      <aside class="cs-sidebar">
+      <header class="cs-topbar">
         <Brand />
-        <nav class="cs-nav" aria-label="Constellation Sync">
-          {NAV_ITEMS.map((item) => (
-            <button class={page === item.id ? "is-active" : ""} onClick={() => setPage(item.id)}>
-              <Icon name={item.icon} />
-              <span>{t(item.label)}</span>
-              {item.id === "overview" && unresolvedConflicts(snapshot).length > 0 ? <Badge>{unresolvedConflicts(snapshot).length}</Badge> : null}
-            </button>
-          ))}
-        </nav>
-        <div class="cs-sidebar-footer">
-          <span class={`cs-status-dot is-${snapshot.status.kind}`} />
-          <div>
+        <div class="cs-status-chip" role="status">
+          <span class={`cs-status-dot is-${snapshot.status.kind}`} aria-hidden="true" />
+          <span class="cs-status-chip-text">
             <strong>{t("status")}</strong>
             <span>{snapshot.status.message}</span>
-          </div>
+          </span>
         </div>
-      </aside>
+      </header>
       <main class="cs-content">
-        <div class="cs-page-heading">
-          <div>
-            <p class="cs-kicker">Constellation Sync</p>
-            <h1>{t(NAV_ITEMS.find((item) => item.id === page)?.label ?? "overview")}</h1>
-          </div>
-          {snapshot.settings.binding ? (
-            <button class="cs-button cs-button-primary" disabled={busy(snapshot)} onClick={() => void run(() => controller.syncNow())}>
-              <Icon name="refresh-cw" /> {t("syncNow")}
-            </button>
-          ) : null}
-        </div>
         {error ? <div class="cs-alert is-error"><Icon name="circle-alert" /><span>{error}</span></div> : null}
         {!snapshot.settings.account ? (
           <LoginPanel snapshot={snapshot} controller={controller} run={run} t={t} />
-        ) : !snapshot.settings.binding && page !== "settings" ? (
-          <VaultSetup snapshot={snapshot} controller={controller} run={run} t={t} />
+        ) : !snapshot.settings.binding ? (
+          <div class="cs-stack">
+            <VaultSetup snapshot={snapshot} controller={controller} run={run} t={t} />
+            <SettingsSections snapshot={snapshot} controller={controller} run={run} t={t} />
+          </div>
         ) : (
-          <PageContent page={page} snapshot={snapshot} controller={controller} run={run} t={t} />
+          <BoundPage snapshot={snapshot} controller={controller} run={run} t={t} />
         )}
       </main>
     </div>
@@ -169,7 +136,7 @@ function VaultSetup(props: PanelProps): preact.JSX.Element {
 
   return (
     <div class="cs-stack">
-      <div class="cs-alert is-info"><Icon name="lock-keyhole" /><span>{t("selectRepository")} {t("repositoryPrivateOnly")}</span></div>
+      <div class="cs-alert is-info"><Icon name="globe" /><span>{t("selectRepository")} {t("repositoryVisibilityNote")}</span></div>
       <section class="cs-card">
         <div class="cs-card-header">
           <div><p class="cs-kicker">GitHub</p><h2>{t("repositories")}</h2></div>
@@ -181,7 +148,7 @@ function VaultSetup(props: PanelProps): preact.JSX.Element {
           <div class="cs-repo-grid">
             {snapshot.repositories.map((repository) => (
               <button class={`cs-repo-card ${selected?.id === repository.id ? "is-selected" : ""}`} onClick={() => void run(() => controller.selectRepository(repository))}>
-                <Icon name="lock-keyhole" />
+                <Icon name={repository.private ? "lock-keyhole" : "globe"} />
                 <span><strong>{repository.fullName}</strong><small>{repository.defaultBranch}</small></span>
               </button>
             ))}
@@ -222,22 +189,31 @@ function VaultSetup(props: PanelProps): preact.JSX.Element {
   );
 }
 
-function PageContent(props: PanelProps & { page: Page }): preact.JSX.Element {
-  if (props.page === "overview") return <Overview {...props} />;
-  return <SettingsPage {...props} />;
+function BoundPage(props: PanelProps): preact.JSX.Element {
+  const { snapshot, t } = props;
+  if (!snapshot.settings.binding) return <Empty>{t("notBound")}</Empty>;
+  return (
+    <div class="cs-stack">
+      <OverviewSections {...props} />
+      <SettingsSections {...props} />
+    </div>
+  );
 }
 
-function Overview({ snapshot, controller, run, t }: PanelProps): preact.JSX.Element {
+function OverviewSections({ snapshot, controller, run, t }: PanelProps): preact.JSX.Element {
   const binding = snapshot.settings.binding;
   if (!binding) return <Empty>{t("notBound")}</Empty>;
   const pending = snapshot.settings.pendingReview?.plan;
   const conflicts = unresolvedConflicts(snapshot);
+  const interval = POLL_OPTIONS.find(([ms]) => ms === snapshot.settings.remotePollMs);
+  const storage = snapshot.settings.storageUsage;
   return (
-    <div class="cs-stack">
+    <>
       <div class="cs-metric-grid">
-        <Metric icon="activity" label={t("status")} value={snapshot.status.message} tone="violet" />
         <Metric icon="git-branch" label={t("branch")} value={binding.branch} tone="cyan" mono />
         <Metric icon="clock-3" label={t("lastSync")} value={snapshot.settings.lastSuccessAt ? formatDate(snapshot.settings.lastSuccessAt) : t("never")} tone="orange" />
+        <Metric icon="timer" label={t("checkInterval")} value={interval ? t(interval[1]) : `${Math.round(snapshot.settings.remotePollMs / 1000)}s`} tone="green" />
+        <Metric icon="hard-drive" label={t("storageTitle")} value={storage ? formatSize(storage.sizeKb) : "—"} tone="violet" />
       </div>
       {pending ? (
         <section class="cs-card cs-review-card">
@@ -279,25 +255,21 @@ function Overview({ snapshot, controller, run, t }: PanelProps): preact.JSX.Elem
         </section>
       ) : null}
       <section class="cs-card"><div class="cs-card-header"><div><p class="cs-kicker">Recent</p><h2>{t("history")}</h2></div></div><ActivityList snapshot={snapshot} t={t} limit={8} /></section>
-    </div>
+    </>
   );
 }
 
-function SettingsPage({ snapshot, controller, run, t }: PanelProps): preact.JSX.Element {
+function SettingsSections({ snapshot, controller, run, t }: PanelProps): preact.JSX.Element {
   const settings = snapshot.settings;
   const binding = settings.binding;
   const [name, setName] = useState(binding?.branch ?? "");
   const [deviceName, setDeviceName] = useState(settings.deviceName);
-  const [ignores, setIgnores] = useState(settings.policy.ignorePatterns.join("\n"));
-  const [plugins, setPlugins] = useState(settings.policy.obsidian.communityPluginData.join("\n"));
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
-  const [restorePath, setRestorePath] = useState("");
-  const [restoreCommit, setRestoreCommit] = useState("");
 
   useEffect(() => setName(binding?.branch ?? ""), [binding?.branch]);
 
   return (
-    <div class="cs-stack">
+    <>
       {binding ? (
         <section class="cs-card">
           <p class="cs-kicker">{t("currentVault")}</p>
@@ -325,34 +297,24 @@ function SettingsPage({ snapshot, controller, run, t }: PanelProps): preact.JSX.
         </section>
       ) : null}
       <section class="cs-card cs-settings-list">
+        <p class="cs-kicker">{t("preferences")}</p>
         <Toggle label={t("automaticSync")} checked={settings.autoSync} onChange={(value) => void run(() => controller.updatePreference("autoSync", value))} />
         <Toggle label={t("paused")} checked={settings.paused} onChange={(value) => void run(() => controller.updatePreference("paused", value))} />
-        <label class="cs-setting-row"><span><strong>{t("language")}</strong></span><select value={settings.locale} onChange={(event) => void run(() => controller.updatePreference("locale", event.currentTarget.value as "auto" | "zh-CN" | "en"))}><option value="auto">{t("followObsidian")}</option><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
-        <label class="cs-setting-row"><span><strong>{t("checkInterval")}</strong></span><select value={String(settings.remotePollMs)} onChange={(event) => void run(() => controller.updatePreference("remotePollMs", Number(event.currentTarget.value)))}>{POLL_OPTIONS.map(([ms, key]) => <option value={String(ms)}>{t(key)}</option>)}</select></label>
-        <label class="cs-setting-row"><span><strong>{t("deviceName")}</strong></span><div class="cs-inline-field"><input value={deviceName} onInput={(event) => setDeviceName(event.currentTarget.value)} /><button class="cs-button" onClick={() => void run(() => controller.updatePreference("deviceName", deviceName))}>{t("save")}</button></div></label>
+        <div class="cs-setting-row"><span><strong>{t("language")}</strong></span><select aria-label={t("language")} value={settings.locale} onChange={(event) => void run(() => controller.updatePreference("locale", event.currentTarget.value as "auto" | "zh-CN" | "en"))}><option value="auto">{t("followObsidian")}</option><option value="zh-CN">简体中文</option><option value="en">English</option></select></div>
+        <div class="cs-setting-row"><span><strong>{t("checkInterval")}</strong></span><select aria-label={t("checkInterval")} value={String(settings.remotePollMs)} onChange={(event) => void run(() => controller.updatePreference("remotePollMs", Number(event.currentTarget.value)))}>{POLL_OPTIONS.map(([ms, key]) => <option value={String(ms)}>{t(key)}</option>)}</select></div>
+        <div class="cs-setting-row"><span><strong>{t("deviceName")}</strong></span><div class="cs-inline-field"><input aria-label={t("deviceName")} value={deviceName} onInput={(event) => setDeviceName(event.currentTarget.value)} /><button class="cs-button" onClick={() => void run(() => controller.updatePreference("deviceName", deviceName))}>{t("save")}</button></div></div>
       </section>
-      <section class="cs-card"><label class="cs-field"><span>{t("ignores")}</span><textarea rows={8} value={ignores} onInput={(event) => setIgnores(event.currentTarget.value)} /><small>{t("ignoresHelp")}</small></label><button class="cs-button cs-button-primary" onClick={() => void run(() => controller.updateIgnorePatterns(ignores))}>{t("save")}</button></section>
-      <section class="cs-card"><label class="cs-field"><span>{t("communityPlugins")}</span><textarea rows={5} value={plugins} placeholder="dataview" onInput={(event) => setPlugins(event.currentTarget.value)} /><small>{t("communityPluginsHelp")}</small></label><button class="cs-button cs-button-primary" onClick={() => void run(() => controller.updateCommunityPluginData(plugins.split(/\r?\n/)))}>{t("save")}</button></section>
-      <section class="cs-card">
-        <details class="cs-advanced">
-          <summary>{t("advanced")}</summary>
-          <div class="cs-advanced-body">
-            <Definition label={t("status")} value={snapshot.status.kind} />
-            <Definition label={t("diagnosticsRate")} value={snapshot.rateLimit.remaining === null ? "—" : String(snapshot.rateLimit.remaining)} />
-            <Definition label={t("schema")} value={String(settings.schemaVersion)} />
-            <Definition label={t("baseCommit")} value={binding?.baseCommitOid ?? "—"} mono />
-            <p class="cs-kicker">{t("restore")}</p>
-            <p class="cs-muted">{t("restoreHelp")}</p>
-            <div class="cs-form-grid">
-              <label class="cs-field"><span>{t("restorePath")}</span><input value={restorePath} onInput={(event) => setRestorePath(event.currentTarget.value)} placeholder="Notes/example.md" /></label>
-              <label class="cs-field"><span>{t("restoreCommit")}</span><input value={restoreCommit} onInput={(event) => setRestoreCommit(event.currentTarget.value)} placeholder="commit SHA" /></label>
-            </div>
-            <button class="cs-button" disabled={!restorePath || !restoreCommit || busy(snapshot)} onClick={() => void run(() => controller.restoreFile(restorePath, restoreCommit))}>{t("restore")}</button>
-          </div>
-        </details>
+        <section class="cs-card">
+        <p class="cs-kicker">{t("advanced")}</p>
+        <div class="cs-advanced-body">
+          <Definition label={t("status")} value={snapshot.status.kind} />
+          <Definition label={t("diagnosticsRate")} value={snapshot.rateLimit.remaining === null ? "—" : String(snapshot.rateLimit.remaining)} />
+          <Definition label={t("schema")} value={String(settings.schemaVersion)} />
+          <Definition label={t("baseCommit")} value={binding?.baseCommitOid ?? "—"} mono />
+        </div>
       </section>
       <section class="cs-card cs-danger-zone"><p class="cs-kicker">{t("danger")}</p><div class="cs-actions"><button class="cs-button is-danger" disabled={!settings.account} onClick={() => void run(() => controller.signOut())}>{t("signOut")}</button></div></section>
-    </div>
+    </>
   );
 }
 
@@ -363,17 +325,18 @@ interface PanelProps {
   t: (key: TranslationKey) => string;
 }
 
-const NAV_ITEMS: Array<{ id: Page; label: TranslationKey; icon: string }> = [
-  { id: "overview", label: "overview", icon: "layout-dashboard" },
-  { id: "settings", label: "settings", icon: "settings-2" }
-];
-
 const POLL_OPTIONS: Array<[number, TranslationKey]> = [
   [15_000, "interval15s"],
   [30_000, "interval30s"],
   [60_000, "interval60s"],
   [300_000, "interval300s"]
 ];
+
+function formatSize(sizeKb: number): string {
+  if (sizeKb < 1024) return `${Math.round(sizeKb)} KB`;
+  if (sizeKb < 1024 * 1024) return `${(sizeKb / 1024).toFixed(1)} MB`;
+  return `${(sizeKb / 1024 / 1024).toFixed(2)} GB`;
+}
 
 function unresolvedConflicts(snapshot: DashboardSnapshot): ConflictRecord[] {
   return snapshot.settings.conflicts.filter((item) => !item.resolved);
@@ -429,7 +392,7 @@ function Definition({ label, value, mono = false }: { label: string; value: stri
 }
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }): preact.JSX.Element {
-  return <label class="cs-setting-row"><span><strong>{label}</strong></span><input class="cs-switch" type="checkbox" checked={checked} onChange={(event) => onChange(event.currentTarget.checked)} /></label>;
+  return <div class="cs-setting-row"><span><strong>{label}</strong></span><input class="cs-switch" type="checkbox" role="switch" aria-label={label} checked={checked} onChange={(event) => onChange(event.currentTarget.checked)} /></div>;
 }
 
 function busy(snapshot: DashboardSnapshot): boolean {

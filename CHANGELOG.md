@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 — Drop the shared ignore rules and community plugin data
+
+Breaking change: the shared sync policy (ignore patterns, community plugin data,and the policyRevision protocol) is gone. Versions before this release cannot read vault markers written by this release,so all devices should upgrade before syncing again. Vault markers written by older versions remain readable..
+
+- Remove the "Shared ignore patterns" and "Community plugin data" settings cards. Contents of the config directory (`.obsidian/`) are now always excluded from sync instead of being synced only for listed plugins..
+- Drop the shared policy revision machinery:as `policyRevision`/`syncPolicy` fields in vault.json and policy bookkeeping in settings. Stale policy fields in `data.json` are discarded on save.
+- Remove the redundant "Sync now" button from the page header;the overview dashboard keeps its sync action..
+- Redesign the dashboard into a single scrolling page: the overview and settings pages merge, the sidebar navigation is replaced by a top status chip, and advanced diagnostics are always expanded.
+- Support private and public repositories: the picker lists every accessible repository with a visibility icon and an explicit warning for public ones, and syncing no longer blocks when a bound repository turns public. Private remains the recommended choice.
+- Show whole-repository storage usage in the metrics row (GitHub reports the size asynchronously, so it may lag behind the latest commit).
+- Remove the manual file-restore form (path + commit SHA); the commit history on GitHub remains the way back.
+- Fix the preference rows triggering their switch or dropdown when clicking anywhere in the row; only the control itself responds now.
+- Clean up stray UTF-8 BOMs, mixed line endings, and a missing final newline left by earlier edits.
+
 ## 0.2.2 — Quiet automatic syncs
 
 - A routine background check that finds no changes is now fully silent: it no longer writes `data.json`, re-renders the dashboard (the flicker on every poll), or logs a "No changes" activity entry. Manual "Sync now" still reports "Up to date".

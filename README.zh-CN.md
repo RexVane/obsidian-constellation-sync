@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/github/license/RexVane/obsidian-constellation-sync)](LICENSE)
 ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-7c3aed)
 
-Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 私有仓库在多台设备之间同步笔记。一个私有仓库可以承载多个笔记库，每个笔记库使用一个独立的 GitHub 分支。
+Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 仓库的独立分支在多台设备之间同步笔记。一个专用仓库可以承载多个笔记库，每个笔记库使用一个独立的 GitHub 分支。推荐使用私有仓库；也支持公开仓库，选择时会明确提示可见性风险。
 
 ## 截图
 
@@ -23,13 +23,13 @@ Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 私有仓库�
 
 ## 快速上手
 
-1. 点击 orbit 图标打开仪表盘，用 GitHub 访问令牌连接——登录页写明了选哪种令牌、需要哪些权限。需要一个专用的**私有**仓库。
+1. 点击 orbit 图标打开仪表盘，用 GitHub 访问令牌连接——登录页写明了选哪种令牌、需要哪些权限。需要一个专用仓库；推荐私有仓库，公开仓库在应用内会有可见性提示。
 2. 选择仓库后绑定笔记库：直接使用仓库默认分支、新建分支，或加入已有分支。
 3. 完成。同步自动进行；冲突内容会保留为冲突副本，绝不静默覆盖。
 
 ## 数据模型
 
-- 一个专用的 GitHub 私有仓库可以包含多个笔记库。
+- 一个专用的 GitHub 仓库可以包含多个笔记库。推荐私有仓库；如果选择公开仓库，同步的所有内容都会对公众可见。
 - 每个笔记库位于一个非默认分支的根目录中。
 - 分支名使用笔记库的共享英文名，例如 `work-notes`。
 - `.constellation-sync/vault.json` 保存稳定的 `vaultId`，因此分支改名后其他设备仍能跟随。

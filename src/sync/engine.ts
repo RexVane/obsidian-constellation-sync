@@ -6,7 +6,6 @@ import {
   type SyncApproval,
   type SyncOperation,
   type SyncPlan,
-  type SyncPolicy,
   type SyncResult
 } from "../types";
 import { decodeUtf8, utf8 } from "../utils/encoding";
@@ -62,14 +61,14 @@ export class SyncEngine {
     private readonly vault: VaultStore
   ) {}
 
-  async createPlan(binding: RepositoryBinding, policy: SyncPolicy, base: SnapshotManifest): Promise<SyncPlan> {
+  async createPlan(binding: RepositoryBinding, base: SnapshotManifest): Promise<SyncPlan> {
     const [local, remote] = await Promise.all([
-      this.vault.scan(policy),
+      this.vault.scan(),
       this.github.getSnapshot(binding.repository, binding.branch)
     ]);
     const configDir = this.vault.configDir();
-    const filteredBase = filterManifest(base, policy, configDir);
-    const filteredRemote = filterManifest(remote.manifest, policy, configDir);
+    const filteredBase = filterManifest(base, configDir);
+    const filteredRemote = filterManifest(remote.manifest, configDir);
     return buildSyncPlan({
       ...(binding.baseCommitOid ? { baseCommitOid: binding.baseCommitOid } : {}),
       remoteHeadOid: remote.headOid,
@@ -82,7 +81,6 @@ export class SyncEngine {
 
   async execute(
     binding: RepositoryBinding,
-    policy: SyncPolicy,
     plan: SyncPlan,
     approval: SyncApproval,
     deviceName: string
@@ -137,7 +135,7 @@ export class SyncEngine {
         plan,
         ...(pushed ? { commitOid } : {})
       },
-      manifest: filterManifest(refreshed.manifest, policy, this.vault.configDir()),
+      manifest: filterManifest(refreshed.manifest, this.vault.configDir()),
       baseCommitOid: refreshed.headOid,
       conflicts
     };
@@ -334,8 +332,8 @@ export class SyncEngine {
   }
 }
 
-function filterManifest(manifest: SnapshotManifest, policy: SyncPolicy, configDir: string): SnapshotManifest {
-  return Object.fromEntries(Object.entries(manifest).filter(([path]) => shouldSyncPath(path, policy, configDir)));
+function filterManifest(manifest: SnapshotManifest, configDir: string): SnapshotManifest {
+  return Object.fromEntries(Object.entries(manifest).filter(([path]) => shouldSyncPath(path, configDir)));
 }
 
 function conflictRecord(path: string, reason: ConflictRecord["reason"], conflictPath?: string): ConflictRecord {
