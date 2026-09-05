@@ -11,6 +11,10 @@
 - Workspace layout and cache are always excluded, and plugin code files are never uploaded — only the configuration you explicitly pick.
 - The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
 
+## 0.4.10 — Keep syncing while minimized
+
+- Desktop background sync no longer stalls when the Obsidian window is minimized or hidden: the remote check was gated on window visibility, so configuration edits (and remote changes) sat unsynced until the window was restored. Mobile keeps the visibility gate, since mobile OSes suspend background work.
+
 ## 0.4.9 — Configurable local push delay
 
 - The delay between a local edit and its push (the debounce) is now configurable in the dashboard: 5 s, 15 s, 30 s (default) or 60 s. Combined with the 15 s check interval, end-to-end latency between devices can be brought down to roughly 20 seconds.

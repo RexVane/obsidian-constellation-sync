@@ -1,4 +1,4 @@
-import { Notice, Plugin } from "obsidian";
+import { Notice, Platform, Plugin } from "obsidian";
 import { GitHubAuth, GitHubAuthError, type SecretStore } from "./auth/github-auth";
 import type { DashboardController, DashboardSnapshot } from "./controller";
 import { GitHubApiError, GitHubClient, isStaleHeadError } from "./github/github-client";
@@ -767,7 +767,10 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   private async maybePollRemote(): Promise<void> {
-    if (document.visibilityState !== "visible" || !this.settings.autoSync || this.settings.paused) return;
+    // Mobile OSes suspend background work, so poll only while visible there.
+    // On desktop a minimized window is normal usage and must keep syncing.
+    if (Platform.isMobile && document.visibilityState !== "visible") return;
+    if (!this.settings.autoSync || this.settings.paused) return;
     if (Date.now() - this.lastRemotePollAt < this.settings.remotePollMs) return;
     await this.pollImmediately();
   }
