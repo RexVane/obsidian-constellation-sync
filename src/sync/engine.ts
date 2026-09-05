@@ -126,10 +126,7 @@ export class SyncEngine {
       else await this.vault.remove(change.path);
     }
 
-    const refreshed = await this.github.getSnapshot(binding.repository, binding.branch);
-    if (pushed && refreshed.headOid !== commitOid) {
-      throw new SyncChangedDuringRunError("The remote branch changed while the sync commit was being finalized.");
-    }
+    const refreshed = await this.refreshedSnapshot(binding, commitOid, pushed);
     return {
       result: {
         kind: plan.operations.length === 0 ? "noop" : "success",
@@ -140,6 +137,27 @@ export class SyncEngine {
       baseCommitOid: refreshed.headOid,
       conflicts
     };
+  }
+
+  // The push is durable once GraphQL accepts it, but getSnapshot is served
+  // from a REST replica that can lag behind the write for a few seconds and
+  // still report the pre-push head — which used to misfile the run as a
+  // mid-sync change and fail every retry until the replica caught up. Wait
+  // the replica out; only a genuinely different head fails the run.
+  private async refreshedSnapshot(
+    binding: RepositoryBinding,
+    expectedHead: string,
+    pushed: boolean
+  ): Promise<{ headOid: string; manifest: SnapshotManifest }> {
+    const delays = [0, 1_000, 2_000, 4_000, 6_000];
+    let refreshed: { headOid: string; manifest: SnapshotManifest } | null = null;
+    for (let attempt = 0; attempt < delays.length; attempt += 1) {
+      const delay = delays[attempt] ?? 0;
+      if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+      refreshed = await this.github.getSnapshot(binding.repository, binding.branch);
+      if (!pushed || refreshed.headOid === expectedHead) return refreshed;
+    }
+    throw new SyncChangedDuringRunError("The remote branch changed while the sync commit was being finalized.");
   }
 
   private async applyOperation(

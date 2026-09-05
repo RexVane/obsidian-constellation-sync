@@ -652,6 +652,10 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       if (!quiet) {
         await this.saveSettings();
         this.setStatus(unresolved ? "conflict" : "idle", message);
+      } else if (this.status.kind === "error") {
+        // A quiet check that finds nothing to do still clears a stale failure:
+        // the run that produced the error is no longer reproducible.
+        this.setStatus(this.settings.paused ? "paused" : "idle", this.settings.paused ? "Paused" : "Ready");
       }
       return;
     }

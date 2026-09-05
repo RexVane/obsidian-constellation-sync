@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 — Survive replica lag after a push
+
+- A successful push was sometimes misread as a failure: the post-push snapshot comes from a REST replica that can lag behind the GraphQL write for a few seconds, so the run saw the pre-push head, retried, and then failed the retry with a stale-head error (the uploaded commit was actually fine). The engine now waits the replica out — up to ~13 s — before deciding the branch moved on.
+- A quiet background check that finds nothing to do now clears a stale error status, so one-off transient failures no longer linger after they stop reproducing.
+
 ## 0.4.0 — Config sync
 
 - Selected Obsidian configuration now travels with the vault: the dashboard can scan `.obsidian/` and lets you tick what should sync. Appearance, editor settings, hotkeys, themes, snippets, and the enabled community plugins list are preselected; ticking a plugin's settings syncs its configuration, while the plugin itself is best installed from the community marketplace on each device.
