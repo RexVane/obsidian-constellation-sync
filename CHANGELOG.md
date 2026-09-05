@@ -11,6 +11,11 @@
 - Workspace layout and cache are always excluded, and plugin code files are never uploaded — only the configuration you explicitly pick.
 - The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
 
+## 0.4.8 — Drop plugin sync, platform-aware defaults
+
+- Plugin sync is removed: the enabled community plugins list and per-plugin settings no longer sync, and everything under the plugins folder is hard-excluded. Stale selections from earlier versions migrate out automatically; existing files on devices and on the branch are left untouched (frozen, not deleted).
+- Config defaults are now platform-aware: mobile skips hotkeys by default since hardware-modifier shortcuts barely apply there. Each device keeps its own selection, so Mac, Windows and mobile can differ.
+
 ## 0.4.7 — Directory pruning on macOS
 
 - Empty-directory pruning no longer fails on macOS: the adapter refuses to remove directories without the recursive flag there (EISDIR), which aborted an entire sync when an emptied folder chain was pruned. Pruning now removes recursively (the directory is verified empty first) and a failed prune step leaves an empty folder behind instead of failing the sync.

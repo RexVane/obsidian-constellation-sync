@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { findPortableCollisions, shouldSyncPath, validatePortablePath } from "../src/utils/path";
 
 const NOTHING = new Set<string>();
-const SELECTED = new Set(["appearance.json", "themes/", "snippets/", "plugins/dataview/data.json"]);
+const SELECTED = new Set(["appearance.json", "themes/", "snippets/"]);
 
 describe("portable paths and sync scope", () => {
   it("keeps mandatory exclusions strongest", () => {
@@ -16,9 +16,17 @@ describe("portable paths and sync scope", () => {
     expect(shouldSyncPath(".obsidian/appearance.json", ".obsidian", NOTHING)).toBe(false);
     expect(shouldSyncPath(".obsidian/themes/mine.css", ".obsidian", SELECTED)).toBe(true);
     expect(shouldSyncPath(".obsidian/snippets/deep/nested.css", ".obsidian", SELECTED)).toBe(true);
-    expect(shouldSyncPath(".obsidian/plugins/dataview/data.json", ".obsidian", SELECTED)).toBe(true);
+  });
+
+  it("never syncs plugin files, even when a stale selection names them", () => {
+    expect(shouldSyncPath(".obsidian/plugins/dataview/data.json", ".obsidian", SELECTED)).toBe(false);
     expect(shouldSyncPath(".obsidian/plugins/dataview/main.js", ".obsidian", SELECTED)).toBe(false);
-    expect(shouldSyncPath(".obsidian/plugins/other/data.json", ".obsidian", SELECTED)).toBe(false);
+    expect(
+      shouldSyncPath(".obsidian/plugins/dataview/data.json", ".obsidian", new Set(["plugins/dataview/data.json"]))
+    ).toBe(false);
+    expect(shouldSyncPath(".obsidian/community-plugins.json", ".obsidian", new Set(["community-plugins.json"]))).toBe(
+      false
+    );
   });
 
   it("uses the vault's configured settings directory", () => {

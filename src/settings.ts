@@ -10,16 +10,23 @@ const DEFAULT_POLL_MS = 15_000;
 const LEGACY_DEFAULT_POLL_MS = 60_000;
 
 // The safe configuration defaults: appearance and editor preferences, themes,
-// snippets, and the list of enabled community plugins so other devices know
-// what to install from the marketplace.
-export const DEFAULT_CONFIG_SYNC_PATHS = [
+// and snippets. Plugin-related files (the enabled list and per-plugin
+// settings) are deliberately excluded — plugins are installed and configured
+// on each device.
+const DESKTOP_CONFIG_SYNC_PATHS = [
   "appearance.json",
   "app.json",
   "hotkeys.json",
   "themes/",
-  "snippets/",
-  "community-plugins.json"
+  "snippets/"
 ];
+
+// Hotkeys barely apply on mobile (no hardware modifiers), so the mobile
+// default skips them; every other safe entry is portable across platforms.
+export function defaultConfigSyncPaths(): string[] {
+  if (Platform.isMobile) return ["appearance.json", "themes/", "snippets/"];
+  return [...DESKTOP_CONFIG_SYNC_PATHS];
+}
 
 export function normalizePollInterval(ms: unknown): number {
   const value = typeof ms === "number" && Number.isFinite(ms) ? ms : DEFAULT_POLL_MS;
@@ -41,7 +48,7 @@ export function createDefaultSettings(): PluginSettings {
     conflicts: [],
     activity: [],
     skippedFiles: [],
-    syncedConfigPaths: [...DEFAULT_CONFIG_SYNC_PATHS]
+    syncedConfigPaths: defaultConfigSyncPaths()
   };
 }
 
@@ -71,12 +78,19 @@ export function loadSettings(raw: unknown): PluginSettings {
 }
 
 function sanitizeConfigPaths(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [...DEFAULT_CONFIG_SYNC_PATHS];
+  if (!Array.isArray(raw)) return defaultConfigSyncPaths();
   return [
     ...new Set(
       raw.filter(
         (item): item is string =>
-          typeof item === "string" && item.trim() !== "" && !item.startsWith("/") && !item.includes("//")
+          typeof item === "string" &&
+          item.trim() !== "" &&
+          !item.startsWith("/") &&
+          !item.includes("//") &&
+          // Plugin sync was removed in 0.4.8: drop stale selections so the
+          // picker stops offering them and old saves migrate cleanly.
+          item !== "community-plugins.json" &&
+          !item.startsWith("plugins/")
       )
     )
   ];

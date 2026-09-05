@@ -22,7 +22,8 @@ export function isAlwaysExcluded(path: string, configDir: string): boolean {
   const configPatterns = [
     `${configRoot}/cache/**`,
     `${configRoot}/workspace*.json`,
-    `${configRoot}/plugins/constellation-sync/**`
+    `${configRoot}/plugins/**`,
+    `${configRoot}/community-plugins.json`
   ];
   return [...ALWAYS_EXCLUDED, ...configPatterns].some((pattern) => globToRegExp(pattern).test(normalized));
 }

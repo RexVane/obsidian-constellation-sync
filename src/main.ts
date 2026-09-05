@@ -435,22 +435,15 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     const listing = await this.app.vault.adapter.list(configDir);
     for (const filePath of listing.files) {
       const relative = filePath.slice(configDir.length + 1);
-      // Workspace layout is always excluded, so it stays out of the picker too.
-      if (!/^workspace.*\.json$/i.test(relative)) push(relative, false, false);
+      // Workspace layout and plugin sync are always excluded, so they stay
+      // out of the picker entirely.
+      if (!/^workspace.*\.json$/i.test(relative) && relative !== "community-plugins.json") {
+        push(relative, false, false);
+      }
     }
     for (const folderPath of listing.folders) {
       const relative = `${folderPath.slice(configDir.length + 1)}/`;
-      if (relative === "cache/") continue;
-      if (relative === "plugins/") {
-        const plugins = await this.app.vault.adapter.list(`${configDir}/plugins`);
-        for (const pluginFolder of plugins.folders) {
-          const pluginId = pluginFolder.slice(pluginFolder.lastIndexOf("/") + 1);
-          if (!pluginId || pluginId === "constellation-sync") continue;
-          const dataPath = `plugins/${pluginId}/data.json`;
-          if (await this.app.vault.adapter.exists(`${configDir}/${dataPath}`)) push(dataPath, false, false);
-        }
-        continue;
-      }
+      if (relative === "cache/" || relative === "plugins/") continue;
       push(relative, true, false);
     }
     return rows.sort((left, right) => left.path.localeCompare(right.path));

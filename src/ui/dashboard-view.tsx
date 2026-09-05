@@ -424,9 +424,6 @@ function describeConfigPath(path: string, t: (key: TranslationKey) => string): s
   if (path === "themes/") return t("configLabelThemes");
   if (path === "snippets/") return t("configLabelSnippets");
   if (path === "core-plugins.json") return t("configLabelCorePlugins");
-  if (path === "community-plugins.json") return t("configLabelCommunityPlugins");
-  const pluginData = path.match(/^plugins\/([^/]+)\/data\.json$/);
-  if (pluginData) return t("configLabelPluginData").replace("{id}", pluginData[1] ?? "");
   return t("configLabelOther").replace("{path}", path);
 }
 
