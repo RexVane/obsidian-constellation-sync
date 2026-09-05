@@ -67,8 +67,9 @@ export class SyncEngine {
       this.github.getSnapshot(binding.repository, binding.branch)
     ]);
     const configDir = this.vault.configDir();
-    const filteredBase = filterManifest(base, configDir);
-    const filteredRemote = filterManifest(remote.manifest, configDir);
+    const configSelection = new Set(this.vault.syncedConfigPaths());
+    const filteredBase = filterManifest(base, configDir, configSelection);
+    const filteredRemote = filterManifest(remote.manifest, configDir, configSelection);
     return buildSyncPlan({
       ...(binding.baseCommitOid ? { baseCommitOid: binding.baseCommitOid } : {}),
       remoteHeadOid: remote.headOid,
@@ -135,7 +136,7 @@ export class SyncEngine {
         plan,
         ...(pushed ? { commitOid } : {})
       },
-      manifest: filterManifest(refreshed.manifest, this.vault.configDir()),
+      manifest: filterManifest(refreshed.manifest, this.vault.configDir(), new Set(this.vault.syncedConfigPaths())),
       baseCommitOid: refreshed.headOid,
       conflicts
     };
@@ -332,8 +333,8 @@ export class SyncEngine {
   }
 }
 
-function filterManifest(manifest: SnapshotManifest, configDir: string): SnapshotManifest {
-  return Object.fromEntries(Object.entries(manifest).filter(([path]) => shouldSyncPath(path, configDir)));
+function filterManifest(manifest: SnapshotManifest, configDir: string, configSelection: ReadonlySet<string>): SnapshotManifest {
+  return Object.fromEntries(Object.entries(manifest).filter(([path]) => shouldSyncPath(path, configDir, configSelection)));
 }
 
 function conflictRecord(path: string, reason: ConflictRecord["reason"], conflictPath?: string): ConflictRecord {

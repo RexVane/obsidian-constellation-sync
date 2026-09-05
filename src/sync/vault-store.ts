@@ -15,6 +15,9 @@ export interface LocalScan {
 
 export interface VaultStore {
   configDir(): string;
+  /** Config entries currently picked for sync, relative to the config directory. */
+  syncedConfigPaths(): string[];
+  setSyncedConfigPaths(paths: string[]): void;
   scan(): Promise<LocalScan>;
   read(path: string): Promise<Uint8Array>;
   write(path: string, bytes: Uint8Array): Promise<void>;
@@ -33,6 +36,7 @@ export class ObsidianVaultStore implements VaultStore {
   // automatic sync, and most files are untouched between runs. Keyed on
   // mtime and size, so any edit still forces a rehash.
   private readonly oidCache = new Map<string, CachedOid>();
+  private configSyncPaths: string[] = [];
 
   constructor(private readonly app: App) {}
 
@@ -40,16 +44,26 @@ export class ObsidianVaultStore implements VaultStore {
     return this.app.vault.configDir;
   }
 
+  syncedConfigPaths(): string[] {
+    return this.configSyncPaths;
+  }
+
+  setSyncedConfigPaths(paths: string[]): void {
+    this.configSyncPaths = paths;
+  }
+
   async scan(): Promise<LocalScan> {
     const configDir = this.configDir();
+    const selection = new Set(this.configSyncPaths);
     const emptyDirectoryMarkers = await reconcileEmptyDirectoryMarkers(this.app.vault.adapter, configDir);
     const paths = new Set(
       this.app.vault
         .getFiles()
         .map((file) => file.path)
-        .filter((path) => !isEmptyDirectoryMarker(path) && shouldSyncPath(path, configDir))
+        .filter((path) => !isEmptyDirectoryMarker(path) && shouldSyncPath(path, configDir, selection))
     );
     for (const marker of emptyDirectoryMarkers) paths.add(marker);
+    for (const configPath of await this.collectSelectedConfigPaths(configDir, selection)) paths.add(configPath);
     const blockedPaths: string[] = [];
     for (const path of paths) {
       if (validatePortablePath(path).length > 0) blockedPaths.push(path);
@@ -64,6 +78,33 @@ export class ObsidianVaultStore implements VaultStore {
       if (!paths.has(path)) this.oidCache.delete(path);
     }
     return { manifest, blockedPaths: [...new Set(blockedPaths)].sort() };
+  }
+
+  // Selected config entries live outside the vault index, so they are walked
+  // through the adapter: exact files directly, directory entries recursively.
+  private async collectSelectedConfigPaths(configDir: string, selection: ReadonlySet<string>): Promise<string[]> {
+    if (selection.size === 0) return [];
+    const found: string[] = [];
+    for (const entry of selection) {
+      const target = entry.endsWith("/") ? entry.slice(0, -1) : entry;
+      const absolute = `${configDir}/${target}`;
+      try {
+        if (entry.endsWith("/")) {
+          if (await this.app.vault.adapter.exists(absolute)) await this.collectUnder(absolute, found);
+        } else if (await this.app.vault.adapter.exists(absolute)) {
+          found.push(absolute);
+        }
+      } catch {
+        // A missing or unreadable config entry simply contributes nothing.
+      }
+    }
+    return found.filter((path) => shouldSyncPath(path, configDir, selection));
+  }
+
+  private async collectUnder(dir: string, found: string[]): Promise<void> {
+    const listing = await this.app.vault.adapter.list(dir);
+    for (const file of listing.files) found.push(file);
+    for (const folder of listing.folders) await this.collectUnder(folder, found);
   }
 
   private async entryFor(path: string): Promise<SnapshotManifest[string]> {

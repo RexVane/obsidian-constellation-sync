@@ -27,13 +27,27 @@ export function isAlwaysExcluded(path: string, configDir: string): boolean {
   return [...ALWAYS_EXCLUDED, ...configPatterns].some((pattern) => globToRegExp(pattern).test(normalized));
 }
 
-export function shouldSyncPath(path: string, configDir: string): boolean {
+export function shouldSyncPath(
+  path: string,
+  configDir: string,
+  syncedConfigPaths: ReadonlySet<string> = new Set()
+): boolean {
   const normalized = normalizeRepoPath(path);
   const configRoot = normalizeConfigDir(configDir);
   if (isAlwaysExcluded(normalized, configRoot)) return false;
 
   const configPrefix = `${configRoot}/`;
-  if (normalized.startsWith(configPrefix)) return false;
+  if (normalized.startsWith(configPrefix)) {
+    const relative = normalized.slice(configPrefix.length);
+    for (const entry of syncedConfigPaths) {
+      if (entry.endsWith("/")) {
+        if (relative.startsWith(entry)) return true;
+      } else if (relative === entry) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   return true;
 }

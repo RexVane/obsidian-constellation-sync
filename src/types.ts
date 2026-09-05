@@ -165,12 +165,26 @@ export interface PluginSettings {
   lastSuccessAt?: string;
   /** Whole-repo size sampled from GitHub for the dashboard storage gauge. */
   storageUsage?: StorageUsage;
+  /**
+   * Config entries (relative to the config directory; directories end with "/")
+   * the user picked to sync, e.g. appearance.json or plugins/dataview/data.json.
+   */
+  syncedConfigPaths: string[];
 }
 
 export interface StorageUsage {
   /** Whole repository size in kilobytes, as reported by GitHub. */
   sizeKb: number;
   checkedAt: string;
+}
+
+export interface ConfigFileInfo {
+  /** Entry path relative to the config directory; directories end with "/". */
+  path: string;
+  isDir: boolean;
+  /** Always-excluded entries cannot be selected at all. */
+  disabled: boolean;
+  selected: boolean;
 }
 
 export interface BranchSummary {

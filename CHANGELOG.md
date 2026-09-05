@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 — Config sync
+
+- Selected Obsidian configuration now travels with the vault: the dashboard can scan `.obsidian/` and lets you tick what should sync. Appearance, editor settings, hotkeys, themes, snippets, and the enabled community plugins list are preselected; ticking a plugin's settings syncs its configuration, while the plugin itself is best installed from the community marketplace on each device.
+- Workspace layout and cache are always excluded, and plugin code files are never uploaded — only the configuration you explicitly pick.
+- The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
+
 ## 0.3.1 — Repository visibility badge
 
 - Repository cards in the setup screen show the visibility as a small gray badge (Private/Public) beside the repository name — GitHub-style — instead of icons.

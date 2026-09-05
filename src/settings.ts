@@ -9,6 +9,18 @@ const DEFAULT_POLL_MS = 15_000;
 // stays.
 const LEGACY_DEFAULT_POLL_MS = 60_000;
 
+// The safe configuration defaults: appearance and editor preferences, themes,
+// snippets, and the list of enabled community plugins so other devices know
+// what to install from the marketplace.
+export const DEFAULT_CONFIG_SYNC_PATHS = [
+  "appearance.json",
+  "app.json",
+  "hotkeys.json",
+  "themes/",
+  "snippets/",
+  "community-plugins.json"
+];
+
 export function normalizePollInterval(ms: unknown): number {
   const value = typeof ms === "number" && Number.isFinite(ms) ? ms : DEFAULT_POLL_MS;
   if (value === LEGACY_DEFAULT_POLL_MS) return DEFAULT_POLL_MS;
@@ -28,7 +40,8 @@ export function createDefaultSettings(): PluginSettings {
     baseManifest: {},
     conflicts: [],
     activity: [],
-    skippedFiles: []
+    skippedFiles: [],
+    syncedConfigPaths: [...DEFAULT_CONFIG_SYNC_PATHS]
   };
 }
 
@@ -40,6 +53,7 @@ export function loadSettings(raw: unknown): PluginSettings {
   delete value.policy;
 
   const storageUsage = parseStorageUsage(value.storageUsage);
+  const syncedConfigPaths = sanitizeConfigPaths(value.syncedConfigPaths);
 
   return {
     ...defaults,
@@ -51,8 +65,21 @@ export function loadSettings(raw: unknown): PluginSettings {
     skippedFiles: Array.isArray(value.skippedFiles)
       ? value.skippedFiles.filter((item): item is string => typeof item === "string")
       : [],
+    syncedConfigPaths,
     ...(storageUsage ? { storageUsage } : {})
   };
+}
+
+function sanitizeConfigPaths(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_CONFIG_SYNC_PATHS];
+  return [
+    ...new Set(
+      raw.filter(
+        (item): item is string =>
+          typeof item === "string" && item.trim() !== "" && !item.startsWith("/") && !item.includes("//")
+      )
+    )
+  ];
 }
 
 function parseStorageUsage(raw: unknown): StorageUsage | null {

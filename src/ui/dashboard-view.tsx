@@ -3,7 +3,7 @@ import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { DashboardController, DashboardSnapshot } from "../controller";
 import { translator, type TranslationKey } from "../i18n";
-import type { ConflictRecord, SyncPlanSummary } from "../types";
+import type { ConfigFileInfo, ConflictRecord, SyncPlanSummary } from "../types";
 
 export const DASHBOARD_VIEW_TYPE = "constellation-sync-dashboard";
 
@@ -268,8 +268,28 @@ function SettingsSections({ snapshot, controller, run, t }: PanelProps): preact.
   const [name, setName] = useState(binding?.branch ?? "");
   const [deviceName, setDeviceName] = useState(settings.deviceName);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
+  const [configRows, setConfigRows] = useState<ConfigFileInfo[] | null>(null);
 
   useEffect(() => setName(binding?.branch ?? ""), [binding?.branch]);
+  useEffect(() => {
+    controller
+      .scanConfigFiles()
+      .then((rows) => setConfigRows(rows))
+      .catch(() => setConfigRows([]));
+  }, [controller]);
+
+  const toggleConfigRow = (path: string): void => {
+    setConfigRows((rows) => rows?.map((row) => (row.path === path ? { ...row, selected: !row.selected } : row)) ?? rows);
+  };
+
+  const saveConfigRows = async (): Promise<void> => {
+    if (!configRows) return;
+    await run(() => controller.updateSyncedConfigPaths(configRows.filter((row) => row.selected).map((row) => row.path)));
+  };
+
+  const rescanConfigRows = async (): Promise<void> => {
+    await run(() => controller.scanConfigFiles().then((rows) => setConfigRows(rows)));
+  };
 
   return (
     <>
@@ -307,6 +327,36 @@ function SettingsSections({ snapshot, controller, run, t }: PanelProps): preact.
         <div class="cs-setting-row"><span><strong>{t("checkInterval")}</strong></span><select aria-label={t("checkInterval")} value={String(settings.remotePollMs)} onChange={(event) => void run(() => controller.updatePreference("remotePollMs", Number(event.currentTarget.value)))}>{POLL_OPTIONS.map(([ms, key]) => <option value={String(ms)}>{t(key)}</option>)}</select></div>
         <div class="cs-setting-row"><span><strong>{t("deviceName")}</strong></span><div class="cs-inline-field"><input aria-label={t("deviceName")} value={deviceName} onInput={(event) => setDeviceName(event.currentTarget.value)} /><button class="cs-button" onClick={() => void run(() => controller.updatePreference("deviceName", deviceName))}>{t("save")}</button></div></div>
       </section>
+      <section class="cs-card">
+        <div class="cs-card-header">
+          <div><p class="cs-kicker">{t("configSyncTitle")}</p><h2>{t("configSyncHeading")}</h2></div>
+          <div class="cs-actions">
+            <button class="cs-button" disabled={busy(snapshot)} onClick={() => void run(() => rescanConfigRows())}><Icon name="refresh-cw" /> {t("configScan")}</button>
+          </div>
+        </div>
+        <p class="cs-muted">{t("configSyncHelp")}</p>
+        {configRows && configRows.length > 0 ? (
+          <div class="cs-config-list">
+            {configRows.map((row) => (
+              <div key={row.path} class={`cs-config-row ${row.disabled ? "is-disabled" : ""}`}>
+                <input
+                  type="checkbox"
+                  aria-label={describeConfigPath(row.path, t)}
+                  disabled={row.disabled}
+                  checked={row.selected}
+                  onChange={() => toggleConfigRow(row.path)}
+                />
+                <span><strong>{describeConfigPath(row.path, t)}</strong><small>{row.path}</small></span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p class="cs-muted">{t("configScanPending")}</p>
+        )}
+        <div class="cs-actions">
+          <button class="cs-button cs-button-primary" disabled={!configRows || configRows.length === 0 || busy(snapshot)} onClick={() => void run(() => saveConfigRows())}>{t("save")}</button>
+        </div>
+      </section>
         <section class="cs-card">
         <p class="cs-kicker">{t("advanced")}</p>
         <div class="cs-advanced-body">
@@ -339,6 +389,21 @@ function formatSize(sizeKb: number): string {
   if (sizeKb < 1024) return `${Math.round(sizeKb)} KB`;
   if (sizeKb < 1024 * 1024) return `${(sizeKb / 1024).toFixed(1)} MB`;
   return `${(sizeKb / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function describeConfigPath(path: string, t: (key: TranslationKey) => string): string {
+  if (path === "appearance.json") return t("configLabelAppearance");
+  if (path === "app.json") return t("configLabelApp");
+  if (path === "hotkeys.json") return t("configLabelHotkeys");
+  if (path === "themes/") return t("configLabelThemes");
+  if (path === "snippets/") return t("configLabelSnippets");
+  if (path === "cache/") return t("configLabelCache");
+  if (path === "core-plugins.json") return t("configLabelCorePlugins");
+  if (path === "community-plugins.json") return t("configLabelCommunityPlugins");
+  if (/^workspace.*\.json$/.test(path)) return t("configLabelWorkspace");
+  const pluginData = path.match(/^plugins\/([^/]+)\/data\.json$/);
+  if (pluginData) return t("configLabelPluginData").replace("{id}", pluginData[1] ?? "");
+  return t("configLabelOther").replace("{path}", path);
 }
 
 function unresolvedConflicts(snapshot: DashboardSnapshot): ConflictRecord[] {

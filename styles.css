@@ -446,6 +446,23 @@
 .cs-repo-card.is-selected { color: var(--cs-violet); border-color: color-mix(in srgb, var(--cs-violet) 40%, var(--cs-border)); background: color-mix(in srgb, var(--cs-violet) 9%, var(--cs-panel)); }
 
 .cs-list { display: flex; flex-direction: column; }
+
+.cs-config-list { display: flex; flex-direction: column; }
+.cs-config-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--cs-border);
+}
+.cs-config-row:last-child { border-bottom: 0; }
+.cs-config-row.is-disabled { opacity: 0.55; }
+.cs-config-row input[type="checkbox"] { width: 14px; height: 14px; min-height: 14px; margin: 0; box-shadow: none; }
+.cs-config-row > span { display: flex; min-width: 0; flex-direction: column; }
+.cs-config-row strong { overflow: hidden; color: var(--cs-text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.cs-config-row small { overflow: hidden; margin-top: 2px; color: var(--cs-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .cs-list-row {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;

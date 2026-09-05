@@ -7,6 +7,7 @@ import { SyncChangedDuringRunError, SyncEngine, SyncReviewRequiredError } from "
 import { ObsidianVaultStore } from "./sync/vault-store";
 import {
   SCHEMA_VERSION,
+  type ConfigFileInfo,
   type LocaleSetting,
   type PluginSettings,
   type RemoteVaultSummary,
@@ -50,6 +51,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     this.auth = new GitHubAuth(secretStore);
     this.github = new GitHubClient(this.auth);
     this.vaultStore = new ObsidianVaultStore(this.app);
+    this.vaultStore.setSyncedConfigPaths(this.settings.syncedConfigPaths);
     this.engine = new SyncEngine(this.github, this.vaultStore);
 
     this.registerView(DASHBOARD_VIEW_TYPE, (leaf) => new ConstellationDashboardView(leaf, this));
@@ -411,6 +413,49 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     conflict.resolved = true;
     await this.saveSettings();
     this.setStatus(this.settings.conflicts.some((item) => !item.resolved) ? "conflict" : "idle", "Conflict status updated");
+  }
+
+  async updateSyncedConfigPaths(paths: string[]): Promise<void> {
+    return this.enqueueOperation(async () => {
+      this.settings.syncedConfigPaths = [...new Set(paths)];
+      this.vaultStore.setSyncedConfigPaths(this.settings.syncedConfigPaths);
+      await this.saveSettings();
+      this.scheduleLocalSync();
+    });
+  }
+
+  async scanConfigFiles(): Promise<ConfigFileInfo[]> {
+    const configDir = this.app.vault.configDir;
+    const selected = new Set(this.settings.syncedConfigPaths);
+    const rows: ConfigFileInfo[] = [];
+    const push = (path: string, isDir: boolean, disabled: boolean): void => {
+      rows.push({ path, isDir, disabled, selected: !disabled && selected.has(path) });
+    };
+
+    const listing = await this.app.vault.adapter.list(configDir);
+    for (const filePath of listing.files) {
+      const relative = filePath.slice(configDir.length + 1);
+      push(relative, false, /^workspace.*\.json$/i.test(relative));
+    }
+    for (const folderPath of listing.folders) {
+      const relative = `${folderPath.slice(configDir.length + 1)}/`;
+      if (relative === "cache/") {
+        push(relative, true, true);
+        continue;
+      }
+      if (relative === "plugins/") {
+        const plugins = await this.app.vault.adapter.list(`${configDir}/plugins`);
+        for (const pluginFolder of plugins.folders) {
+          const pluginId = pluginFolder.slice(pluginFolder.lastIndexOf("/") + 1);
+          if (!pluginId || pluginId === "constellation-sync") continue;
+          const dataPath = `plugins/${pluginId}/data.json`;
+          if (await this.app.vault.adapter.exists(`${configDir}/${dataPath}`)) push(dataPath, false, false);
+        }
+        continue;
+      }
+      push(relative, true, false);
+    }
+    return rows.sort((left, right) => left.path.localeCompare(right.path));
   }
 
   async updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs">(

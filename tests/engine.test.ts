@@ -8,10 +8,19 @@ import { gitBlobOid } from "../src/utils/hash";
 
 class MemoryVault implements VaultStore {
   readonly blocked: string[] = [];
+  configSyncPaths: string[] = [];
   constructor(readonly files = new Map<string, Uint8Array>()) {}
 
   configDir(): string {
     return ".obsidian";
+  }
+
+  syncedConfigPaths(): string[] {
+    return this.configSyncPaths;
+  }
+
+  setSyncedConfigPaths(paths: string[]): void {
+    this.configSyncPaths = paths;
   }
 
   async scan(): Promise<LocalScan> {
