@@ -10,10 +10,17 @@ const DEFAULT_POLL_MS = 15_000;
 const LEGACY_DEFAULT_POLL_MS = 60_000;
 
 export const LOCAL_DEBOUNCE_MS_OPTIONS = [5_000, 15_000, 30_000, 60_000];
-const DEFAULT_LOCAL_DEBOUNCE_MS = 30_000;
+// Fast by default: 5 s after the last local change the push goes out, so with
+// a 15 s check interval the worst-case cross-device latency is ~20 s.
+const DEFAULT_LOCAL_DEBOUNCE_MS = 5_000;
+// The default before 0.5.1. A stored 30 000 is that default, not a deliberate
+// choice, so it migrates to the new default; anything the user actually picked
+// stays.
+const LEGACY_DEFAULT_LOCAL_DEBOUNCE_MS = 30_000;
 
 export function normalizeLocalDebounce(ms: unknown): number {
   const value = typeof ms === "number" && Number.isFinite(ms) ? ms : DEFAULT_LOCAL_DEBOUNCE_MS;
+  if (value === LEGACY_DEFAULT_LOCAL_DEBOUNCE_MS) return DEFAULT_LOCAL_DEBOUNCE_MS;
   return LOCAL_DEBOUNCE_MS_OPTIONS.includes(value) ? value : DEFAULT_LOCAL_DEBOUNCE_MS;
 }
 

@@ -11,6 +11,10 @@
 - Workspace layout and cache are always excluded, and plugin code files are never uploaded — only the configuration you explicitly pick.
 - The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
 
+## 0.5.1 — Fast sync by default
+
+- The local push debounce now defaults to 5 seconds (was 30 s): with the default 15 s check interval, the worst-case cross-device latency drops to roughly 20 seconds. Devices that explicitly picked 15 s or 60 s keep their choice.
+
 ## 0.5.0 — Steady-state performance
 
 - Routine checks no longer fetch the full remote file tree every cycle: the engine re-reads only the branch head through the strong-consistency channel and reuses the cached snapshot while the head is unchanged (git trees are content-addressed by head, so a matching head guarantees an exact tree). Steady-state polling drops from three REST calls plus a full-tree JSON parse to a single small read — the biggest cost on large vaults and mobile.
