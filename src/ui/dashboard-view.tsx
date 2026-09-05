@@ -273,11 +273,15 @@ function SettingsSections({ snapshot, controller, run, t }: PanelProps): preact.
 
   useEffect(() => setName(binding?.branch ?? ""), [binding?.branch]);
   useEffect(() => {
+    const startedAt = Date.now();
     controller
       .scanConfigFiles()
       .then((rows) => setConfigRows(rows))
       .catch(() => setConfigRows([]))
-      .finally(() => setConfigScanning(false));
+      .finally(async () => {
+        await waitOutScanSpin(startedAt);
+        setConfigScanning(false);
+      });
   }, [controller]);
 
   const toggleConfigRow = (path: string): void => {
@@ -291,8 +295,12 @@ function SettingsSections({ snapshot, controller, run, t }: PanelProps): preact.
 
   const rescanConfigRows = async (): Promise<void> => {
     setConfigScanning(true);
+    const startedAt = Date.now();
     try {
       await run(() => controller.scanConfigFiles().then((rows) => setConfigRows(rows)));
+      // A local scan finishes in milliseconds; hold the spinner for a full
+      // rotation so the feedback is actually visible.
+      await waitOutScanSpin(startedAt);
     } finally {
       setConfigScanning(false);
     }
@@ -393,6 +401,15 @@ const POLL_OPTIONS: Array<[number, TranslationKey]> = [
   [60_000, "interval60s"],
   [300_000, "interval300s"]
 ];
+
+/** The scan itself is near-instant, so the spinner is held for at least one
+ * full rotation — an imperceptible flash reads as "nothing happened". */
+const MIN_SCAN_SPIN_MS = 1_000;
+
+async function waitOutScanSpin(startedAt: number): Promise<void> {
+  const remaining = MIN_SCAN_SPIN_MS - (Date.now() - startedAt);
+  if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+}
 
 function formatSize(sizeKb: number): string {
   if (sizeKb < 1024) return `${Math.round(sizeKb)} KB`;

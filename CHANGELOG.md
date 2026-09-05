@@ -11,6 +11,10 @@
 - Workspace layout and cache are always excluded, and plugin code files are never uploaded — only the configuration you explicitly pick.
 - The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
 
+## 0.4.6 — Visible scan spinner
+
+- The scan spinner now spins for at least one full rotation (~1 s): a local scan finishes in milliseconds and the previous flash read as "nothing happened".
+
 ## 0.4.5 — Clearer sync-time label
 
 - The metrics label "Last successful sync" is now "Last content sync" (上次内容同步): the timestamp intentionally refers to the last time real changes were carried over, not the latest no-change check.
