@@ -62,11 +62,19 @@ export class SyncEngine {
     private readonly vault: VaultStore
   ) {}
 
+  // Steady-state polls only need to know WHETHER the remote moved: when the
+  // branch head still matches the last fetched snapshot, that snapshot is
+  // exact (git trees are content-addressed by head) and the full recursive
+  // tree fetch — the most expensive call of every cycle — is skipped.
+  private remoteSnapshotCache: {
+    repositoryId: number;
+    branch: string;
+    snapshot: { headOid: string; manifest: SnapshotManifest };
+  } | null = null;
+
   async createPlan(binding: RepositoryBinding, base: SnapshotManifest): Promise<SyncPlan> {
-    const [local, remote] = await Promise.all([
-      this.vault.scan(),
-      this.github.getSnapshot(binding.repository, binding.branch)
-    ]);
+    const local = await this.vault.scan();
+    const remote = await this.remoteSnapshot(binding);
     const configDir = this.vault.configDir();
     const configSelection = new Set(this.vault.syncedConfigPaths());
     const filteredBase = filterManifest(base, configDir, configSelection);
@@ -136,6 +144,7 @@ export class SyncEngine {
     }
 
     const refreshed = await this.refreshedSnapshot(binding, commitOid, pushed);
+    this.remoteSnapshotCache = { repositoryId: binding.repository.id, branch: binding.branch, snapshot: refreshed };
     return {
       result: {
         kind: plan.operations.length === 0 ? "noop" : "success",
@@ -167,6 +176,24 @@ export class SyncEngine {
       if (!pushed || refreshed.headOid === expectedHead) return refreshed;
     }
     throw new SyncChangedDuringRunError("The remote branch changed while the sync commit was being finalized.");
+  }
+
+  // The branch head is re-read through the GraphQL strong read: if it says the
+  // head is unchanged, the cached snapshot is exact; if it moved, fall through
+  // to the full fetch and refresh the cache.
+  private async remoteSnapshot(binding: RepositoryBinding): Promise<{ headOid: string; manifest: SnapshotManifest }> {
+    const cached = this.remoteSnapshotCache;
+    if (
+      cached &&
+      cached.repositoryId === binding.repository.id &&
+      cached.branch === binding.branch &&
+      cached.snapshot.headOid === (await this.github.getBranchHeadForCommit(binding.repository, binding.branch))
+    ) {
+      return cached.snapshot;
+    }
+    const snapshot = await this.github.getSnapshot(binding.repository, binding.branch);
+    this.remoteSnapshotCache = { repositoryId: binding.repository.id, branch: binding.branch, snapshot };
+    return snapshot;
   }
 
   private async applyOperation(

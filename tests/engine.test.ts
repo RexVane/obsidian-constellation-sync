@@ -43,9 +43,11 @@ class MemoryVault implements VaultStore {
 class MemoryGitHub implements SyncGithubPort {
   head = "head-1";
   failCommit = false;
+  snapshotCalls = 0;
   constructor(readonly files = new Map<string, Uint8Array>(), readonly historical = new Map<string, Uint8Array>()) {}
 
   async getSnapshot(): Promise<{ headOid: string; manifest: SnapshotManifest }> {
+    this.snapshotCalls += 1;
     const manifest: SnapshotManifest = {};
     for (const [path, bytes] of this.files) manifest[path] = { path, oid: await gitBlobOid(bytes), size: bytes.length };
     return { headOid: this.head, manifest };
@@ -102,6 +104,27 @@ describe("sync engine", () => {
 
     expect(vault.files.has(marker)).toBe(true);
     expect(execution.manifest[marker]).toBeDefined();
+  });
+
+  it("reuses the cached snapshot while the head is unchanged and refetches when it moves", async () => {
+    const vault = new MemoryVault(new Map([["a.md", new TextEncoder().encode("a")]]));
+    const github = new MemoryGitHub(new Map([["a.md", new TextEncoder().encode("a")]]));
+    const engine = new SyncEngine(github, vault);
+
+    await engine.createPlan(binding, {});
+    expect(github.snapshotCalls).toBe(1);
+
+    // Steady state: the head is unchanged, so the cached tree is exact and the
+    // expensive recursive snapshot is skipped.
+    await engine.createPlan(binding, {});
+    expect(github.snapshotCalls).toBe(1);
+
+    // The remote moved: the cache must be bypassed and refreshed.
+    github.files.set("b.md", new TextEncoder().encode("b"));
+    github.head = "head-2";
+    const plan = await engine.createPlan(binding, {});
+    expect(github.snapshotCalls).toBe(2);
+    expect(plan.summary.downloads).toBe(1);
   });
 
   it("uploads local additions and refreshes the base manifest", async () => {

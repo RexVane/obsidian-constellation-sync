@@ -88,8 +88,18 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   snapshot(): DashboardSnapshot {
     const localVaultName = this.localVaultName();
     const suggestedBranch = this.suggestedLocalBranch();
+    // The dashboard treats snapshots as read-only, so the large immutable-ish
+    // pieces (base manifest, binding) are shared by reference and only the
+    // small mutable arrays are copied — a full structuredClone here deep-copied
+    // the entire base manifest on every status change.
     return {
-      settings: structuredClone(this.settings),
+      settings: {
+        ...this.settings,
+        activity: this.settings.activity.slice(),
+        conflicts: this.settings.conflicts.slice(),
+        skippedFiles: this.settings.skippedFiles.slice(),
+        syncedConfigPaths: this.settings.syncedConfigPaths.slice()
+      },
       status: { ...this.status },
       repositories: [...this.repositories],
       ...(this.selectedRepository ? { selectedRepository: { ...this.selectedRepository } } : {}),

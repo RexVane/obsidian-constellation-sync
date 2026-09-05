@@ -11,6 +11,11 @@
 - Workspace layout and cache are always excluded, and plugin code files are never uploaded — only the configuration you explicitly pick.
 - The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
 
+## 0.5.0 — Steady-state performance
+
+- Routine checks no longer fetch the full remote file tree every cycle: the engine re-reads only the branch head through the strong-consistency channel and reuses the cached snapshot while the head is unchanged (git trees are content-addressed by head, so a matching head guarantees an exact tree). Steady-state polling drops from three REST calls plus a full-tree JSON parse to a single small read — the biggest cost on large vaults and mobile.
+- The dashboard snapshot no longer deep-clones the entire settings object (including the base manifest) on every status change; large read-only pieces are shared and only the small mutable arrays are copied.
+
 ## 0.4.10 — Keep syncing while minimized
 
 - Desktop background sync no longer stalls when the Obsidian window is minimized or hidden: the remote check was gated on window visibility, so configuration edits (and remote changes) sat unsynced until the window was restored. Mobile keeps the visibility gate, since mobile OSes suspend background work.
