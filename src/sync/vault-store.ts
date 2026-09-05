@@ -1,4 +1,4 @@
-import { normalizePath, TFile, type App } from "obsidian";
+import { normalizePath, TFile, TFolder, type App } from "obsidian";
 import type { SnapshotManifest } from "../types";
 import { gitBlobOid } from "../utils/hash";
 import { findPortableCollisions, shouldSyncPath, validatePortablePath } from "../utils/path";
@@ -170,12 +170,24 @@ export class ObsidianVaultStore implements VaultStore {
       await removeEmptyDirectoryMarker(this.app.vault.adapter, normalized);
       return;
     }
-    const file = this.app.vault.getAbstractFileByPath(normalized);
-    if (file instanceof TFile) {
-      await this.app.fileManager.trashFile(file);
+    const abstract = this.app.vault.getAbstractFileByPath(normalized);
+    if (abstract instanceof TFile) {
+      await this.app.fileManager.trashFile(abstract);
       return;
     }
-    if (await this.app.vault.adapter.exists(normalized)) await this.app.vault.adapter.remove(normalized);
+    if (abstract instanceof TFolder) {
+      await this.app.vault.adapter.rmdir(normalized, true);
+      return;
+    }
+    if (await this.app.vault.adapter.exists(normalized)) {
+      try {
+        await this.app.vault.adapter.remove(normalized);
+      } catch {
+        // The adapter cannot tell files from directories here; on macOS
+        // removing a directory without the recursive flag throws EISDIR.
+        await this.app.vault.adapter.rmdir(normalized, true);
+      }
+    }
   }
 
   async exists(path: string): Promise<boolean> {

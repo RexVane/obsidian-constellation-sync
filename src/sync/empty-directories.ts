@@ -88,7 +88,16 @@ async function pruneEmptyParents(adapter: DirectoryAdapter, initial: string): Pr
   while (current && isVisibleVaultPath(current) && await adapter.exists(current)) {
     const listing = await adapter.list(current);
     if (listing.files.length > 0 || listing.folders.length > 0) return;
-    await adapter.rmdir(current, false);
+    try {
+      // The directory was just listed as empty, but recursive must be true:
+      // on macOS the adapter implements rmdir via fs.rm, which refuses every
+      // directory (even empty ones) without the flag and throws EISDIR.
+      await adapter.rmdir(current, true);
+    } catch {
+      // Pruning is cosmetic cleanup; a failed step just leaves an empty
+      // directory behind instead of failing the whole sync.
+      return;
+    }
     const slash = current.lastIndexOf("/");
     current = slash < 0 ? "" : current.slice(0, slash);
   }
