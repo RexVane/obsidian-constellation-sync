@@ -2,7 +2,7 @@ import { Notice, Plugin } from "obsidian";
 import { GitHubAuth, GitHubAuthError, type SecretStore } from "./auth/github-auth";
 import type { DashboardController, DashboardSnapshot } from "./controller";
 import { GitHubApiError, GitHubClient, isStaleHeadError } from "./github/github-client";
-import { createDefaultSettings, loadSettings, normalizePollInterval } from "./settings";
+import { createDefaultSettings, loadSettings, normalizeLocalDebounce, normalizePollInterval } from "./settings";
 import { SyncChangedDuringRunError, SyncEngine, SyncReviewRequiredError } from "./sync/engine";
 import { ObsidianVaultStore } from "./sync/vault-store";
 import {
@@ -449,26 +449,26 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     return rows.sort((left, right) => left.path.localeCompare(right.path));
   }
 
-  async updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs">(
+  async updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs" | "localDebounceMs">(
     key: K,
     value: K extends "autoSync" | "paused"
       ? boolean
       : K extends "locale"
         ? LocaleSetting
-        : K extends "remotePollMs"
+        : K extends "remotePollMs" | "localDebounceMs"
           ? number
           : string
   ): Promise<void> {
     return this.enqueueOperation(() => this.updatePreferenceInternal(key, value));
   }
 
-  private async updatePreferenceInternal<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs">(
+  private async updatePreferenceInternal<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs" | "localDebounceMs">(
     key: K,
     value: K extends "autoSync" | "paused"
       ? boolean
       : K extends "locale"
         ? LocaleSetting
-        : K extends "remotePollMs"
+        : K extends "remotePollMs" | "localDebounceMs"
           ? number
           : string
   ): Promise<void> {
@@ -479,6 +479,8 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       this.settings.locale = value as LocaleSetting;
     } else if (key === "remotePollMs") {
       this.settings.remotePollMs = normalizePollInterval(value);
+    } else if (key === "localDebounceMs") {
+      this.settings.localDebounceMs = normalizeLocalDebounce(value);
     } else {
       const name = String(value).trim().slice(0, 32);
       if (!name) throw new Error("Device name cannot be empty.");

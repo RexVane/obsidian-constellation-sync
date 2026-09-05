@@ -36,13 +36,13 @@ export interface DashboardController {
   resolveConflict(id: string): Promise<void>;
   scanConfigFiles(): Promise<ConfigFileInfo[]>;
   updateSyncedConfigPaths(paths: string[]): Promise<void>;
-  updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs">(
+  updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs" | "localDebounceMs">(
     key: K,
     value: K extends "autoSync" | "paused"
       ? boolean
       : K extends "locale"
         ? LocaleSetting
-        : K extends "remotePollMs"
+        : K extends "remotePollMs" | "localDebounceMs"
           ? number
           : string
   ): Promise<void>;

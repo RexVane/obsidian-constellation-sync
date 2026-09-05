@@ -340,6 +340,7 @@ function SettingsSections({ snapshot, controller, run, t }: PanelProps): preact.
         <Toggle label={t("paused")} checked={settings.paused} onChange={(value) => void run(() => controller.updatePreference("paused", value))} />
         <div class="cs-setting-row"><span><strong>{t("language")}</strong></span><select aria-label={t("language")} value={settings.locale} onChange={(event) => void run(() => controller.updatePreference("locale", event.currentTarget.value as "auto" | "zh-CN" | "en"))}><option value="auto">{t("followObsidian")}</option><option value="zh-CN">简体中文</option><option value="en">English</option></select></div>
         <div class="cs-setting-row"><span><strong>{t("checkInterval")}</strong></span><select aria-label={t("checkInterval")} value={String(settings.remotePollMs)} onChange={(event) => void run(() => controller.updatePreference("remotePollMs", Number(event.currentTarget.value)))}>{POLL_OPTIONS.map(([ms, key]) => <option value={String(ms)}>{t(key)}</option>)}</select></div>
+        <div class="cs-setting-row"><span><strong>{t("localDebounce")}</strong></span><select aria-label={t("localDebounce")} value={String(settings.localDebounceMs)} onChange={(event) => void run(() => controller.updatePreference("localDebounceMs", Number(event.currentTarget.value)))}>{DEBOUNCE_OPTIONS.map(([ms, key]) => <option value={String(ms)}>{t(key)}</option>)}</select></div>
         <div class="cs-setting-row"><span><strong>{t("deviceName")}</strong></span><div class="cs-inline-field"><input aria-label={t("deviceName")} value={deviceName} onInput={(event) => setDeviceName(event.currentTarget.value)} /><button class="cs-button" onClick={() => void run(() => controller.updatePreference("deviceName", deviceName))}>{t("save")}</button></div></div>
       </section>
       <section class="cs-card">
@@ -400,6 +401,13 @@ const POLL_OPTIONS: Array<[number, TranslationKey]> = [
   [30_000, "interval30s"],
   [60_000, "interval60s"],
   [300_000, "interval300s"]
+];
+
+const DEBOUNCE_OPTIONS: Array<[number, TranslationKey]> = [
+  [5_000, "interval5s"],
+  [15_000, "interval15s"],
+  [30_000, "interval30s"],
+  [60_000, "interval60s"]
 ];
 
 /** The scan itself is near-instant, so the spinner is held for at least one

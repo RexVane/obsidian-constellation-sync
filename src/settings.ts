@@ -9,6 +9,14 @@ const DEFAULT_POLL_MS = 15_000;
 // stays.
 const LEGACY_DEFAULT_POLL_MS = 60_000;
 
+export const LOCAL_DEBOUNCE_MS_OPTIONS = [5_000, 15_000, 30_000, 60_000];
+const DEFAULT_LOCAL_DEBOUNCE_MS = 30_000;
+
+export function normalizeLocalDebounce(ms: unknown): number {
+  const value = typeof ms === "number" && Number.isFinite(ms) ? ms : DEFAULT_LOCAL_DEBOUNCE_MS;
+  return LOCAL_DEBOUNCE_MS_OPTIONS.includes(value) ? value : DEFAULT_LOCAL_DEBOUNCE_MS;
+}
+
 // The safe configuration defaults: appearance and editor preferences, themes,
 // and snippets. Plugin-related files (the enabled list and per-plugin
 // settings) are deliberately excluded — plugins are installed and configured
@@ -67,6 +75,7 @@ export function loadSettings(raw: unknown): PluginSettings {
     ...value,
     schemaVersion: SCHEMA_VERSION,
     remotePollMs: normalizePollInterval(value.remotePollMs),
+    localDebounceMs: normalizeLocalDebounce(value.localDebounceMs),
     conflicts: Array.isArray(value.conflicts) ? value.conflicts.slice(-200) : [],
     activity: Array.isArray(value.activity) ? value.activity.slice(-500) : [],
     skippedFiles: Array.isArray(value.skippedFiles)
