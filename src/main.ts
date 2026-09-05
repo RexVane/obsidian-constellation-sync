@@ -652,10 +652,20 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       if (!quiet) {
         await this.saveSettings();
         this.setStatus(unresolved ? "conflict" : "idle", message);
-      } else if (this.status.kind === "error") {
-        // A quiet check that finds nothing to do still clears a stale failure:
-        // the run that produced the error is no longer reproducible.
-        this.setStatus(this.settings.paused ? "paused" : "idle", this.settings.paused ? "Paused" : "Ready");
+      } else {
+        const baseMoved = Boolean(
+          this.settings.binding && execution.baseCommitOid !== this.settings.binding.baseCommitOid
+        );
+        const shouldClearError = this.status.kind === "error";
+        if (baseMoved || shouldClearError) {
+          // Persist a corrected base commit once so a lagging replica from a
+          // previous run cannot keep misclassifying remote config changes as
+          // conflicts, and let a quiet check clear a stale error status.
+          await this.saveSettings();
+          if (shouldClearError) {
+            this.setStatus(this.settings.paused ? "paused" : "idle", this.settings.paused ? "Paused" : "Ready");
+          }
+        }
       }
       return;
     }
