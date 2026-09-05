@@ -657,6 +657,13 @@
     animation-iteration-count: 1;
     transition-duration: 0.001ms;
   }
+
+  /* The scan spinner is functional feedback, not decoration: it keeps
+     spinning under reduced motion so the running scan stays visible. */
+  .constellation-sync .cs-spin {
+    animation-duration: 0.9s;
+    animation-iteration-count: infinite;
+  }
 }
 
 @supports not (backdrop-filter: blur(12px)) {

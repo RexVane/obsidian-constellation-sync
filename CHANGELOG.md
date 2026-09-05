@@ -11,6 +11,10 @@
 - Workspace layout and cache are always excluded, and plugin code files are never uploaded — only the configuration you explicitly pick.
 - The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
 
+## 0.4.4 — Spinner under reduced motion
+
+- The scan spinner keeps spinning even when the system asks for reduced motion: it is functional feedback that a scan is running, not decoration.
+
 ## 0.4.3 — Config picker polish
 
 - Always-excluded entries (workspace layout, cache) no longer clutter the config sync picker; the section help still notes they never sync.

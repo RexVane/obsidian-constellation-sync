@@ -1,6 +1,6 @@
 {
   "name": "obsidian-constellation-sync",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Multi-device Obsidian vault synchronization through branches in a private GitHub repository.",
   "type": "module",
   "scripts": {
