@@ -148,8 +148,11 @@ function VaultSetup(props: PanelProps): preact.JSX.Element {
           <div class="cs-repo-grid">
             {snapshot.repositories.map((repository) => (
               <button class={`cs-repo-card ${selected?.id === repository.id ? "is-selected" : ""}`} onClick={() => void run(() => controller.selectRepository(repository))}>
-                <Icon name={repository.private ? "lock-keyhole" : "globe"} />
-                <span><strong>{repository.fullName}</strong><small>{repository.defaultBranch}</small></span>
+                <div class="cs-repo-line">
+                  <strong>{repository.fullName}</strong>
+                  <span class="cs-repo-visibility">{repository.private ? t("visibilityPrivate") : t("visibilityPublic")}</span>
+                </div>
+                <small>{repository.defaultBranch}</small>
               </button>
             ))}
           </div>

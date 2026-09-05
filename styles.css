@@ -396,10 +396,10 @@
 }
 
 .cs-repo-card {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
   min-height: 58px;
   padding: 10px;
   color: var(--cs-muted);
@@ -408,6 +408,27 @@
   background: color-mix(in srgb, var(--cs-canvas) 52%, var(--cs-panel));
   box-shadow: none;
   text-align: left;
+}
+
+.cs-repo-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.cs-repo-line strong { flex: 0 1 auto; }
+
+.cs-repo-visibility {
+  flex: 0 0 auto;
+  padding: 1px 9px;
+  border: 1px solid var(--cs-border);
+  border-radius: 999px;
+  color: var(--cs-muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.6;
 }
 
 .cs-repo-card > span,

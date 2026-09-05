@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 — Repository visibility badge
+
+- Repository cards in the setup screen show the visibility as a small gray badge (Private/Public) beside the repository name — GitHub-style — instead of icons.
+
 ## 0.3.0 — Drop the shared ignore rules and community plugin data
 
 Breaking change: the shared sync policy (ignore patterns, community plugin data,and the policyRevision protocol) is gone. Versions before this release cannot read vault markers written by this release,so all devices should upgrade before syncing again. Vault markers written by older versions remain readable..
