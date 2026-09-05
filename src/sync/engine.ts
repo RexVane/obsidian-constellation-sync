@@ -33,6 +33,7 @@ export interface SyncExecution {
 export interface SyncGithubPort {
   getSnapshot: GitHubClient["getSnapshot"];
   getBranchHead: GitHubClient["getBranchHead"];
+  getBranchHeadForCommit: GitHubClient["getBranchHeadForCommit"];
   getBlob: GitHubClient["getBlob"];
   createCommitOnBranch: GitHubClient["createCommitOnBranch"];
   createCommitWithGitData: GitHubClient["createCommitWithGitData"];
@@ -96,8 +97,16 @@ export class SyncEngine {
     if (plan.largeFileWarnings.length > 0 && !approval.confirmLargeFiles) {
       throw new SyncReviewRequiredError("Large file confirmation is required.", plan);
     }
-    const currentHead = await this.github.getBranchHead(binding.repository, binding.branch);
-    if (currentHead !== plan.remoteHeadOid) throw new SyncReviewRequiredError("Remote branch changed after preview.", plan);
+    // The mutation validates expectedHeadOid against the strong read, so the
+    // pre-push check must use the same consistency domain: a REST replica can
+    // still report a head from before earlier pushes and get a fresh plan
+    // rejected as stale even though nothing else touched the branch.
+    const currentHead = await this.github.getBranchHeadForCommit(binding.repository, binding.branch);
+    if (currentHead !== plan.remoteHeadOid) {
+      // The plan was built against an older tree — replan rather than gating
+      // the user through a review that has nothing to review.
+      throw new SyncChangedDuringRunError("The remote branch changed after the plan was built.");
+    }
 
     const changes: CommitChanges = { additions: [], deletions: [] };
     const conflicts: ConflictRecord[] = [];
@@ -116,7 +125,7 @@ export class SyncEngine {
     let commitOid = currentHead;
     if (pushed) {
       commitOid = await this.pushChanges(binding, currentHead, plan.id, deviceName, changes);
-    } else if (await this.github.getBranchHead(binding.repository, binding.branch) !== currentHead) {
+    } else if (await this.github.getBranchHeadForCommit(binding.repository, binding.branch) !== currentHead) {
       throw new SyncChangedDuringRunError("The remote branch changed while local files were being applied.");
     }
 

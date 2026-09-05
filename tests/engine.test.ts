@@ -52,6 +52,7 @@ class MemoryGitHub implements SyncGithubPort {
   }
 
   getBranchHead(): Promise<string> { return Promise.resolve(this.head); }
+  getBranchHeadForCommit(): Promise<string> { return Promise.resolve(this.head); }
 
   async getBlob(_repository: RepositoryBinding["repository"], oid: string): Promise<Uint8Array> {
     for (const bytes of [...this.files.values(), ...this.historical.values()]) if (await gitBlobOid(bytes) === oid) return bytes;

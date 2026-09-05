@@ -11,7 +11,12 @@
 - Workspace layout and cache are always excluded, and plugin code files are never uploaded — only the configuration you explicitly pick.
 - The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
 
-## 0.4.4 — Spinner under reduced motion
+## 0.4.4 — Spinner under reduced motion, stale-head-proof pushes
+
+- The pre-push branch check now reads the head through the same consistent channel as the push mutation, so a lagging REST replica can no longer reject a fresh plan as stale; a genuinely moved branch replans automatically instead of surfacing an error.
+
+### Earlier in 0.4.4
+- The scan spinner keeps spinning even when the system asks for reduced motion.
 
 - The scan spinner keeps spinning even when the system asks for reduced motion: it is functional feedback that a scan is running, not decoration.
 
