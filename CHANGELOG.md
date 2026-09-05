@@ -11,6 +11,10 @@
 - Workspace layout and cache are always excluded, and plugin code files are never uploaded — only the configuration you explicitly pick.
 - The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
 
+## 0.4.5 — Clearer sync-time label
+
+- The metrics label "Last successful sync" is now "Last content sync" (上次内容同步): the timestamp intentionally refers to the last time real changes were carried over, not the latest no-change check.
+
 ## 0.4.4 — Spinner under reduced motion, stale-head-proof pushes
 
 - The pre-push branch check now reads the head through the same consistent channel as the push mutation, so a lagging REST replica can no longer reject a fresh plan as stale; a genuinely moved branch replans automatically instead of surfacing an error.
