@@ -103,9 +103,11 @@ function sanitizeConfigPaths(raw: unknown): string[] {
           item.trim() !== "" &&
           !item.startsWith("/") &&
           !item.includes("//") &&
-          // Plugin sync was removed in 0.4.8: drop stale selections so the
-          // picker stops offering them and old saves migrate cleanly.
+          // Plugin sync was removed in 0.4.8 and graph.json hard-excluded in
+          // 0.5.2: drop stale selections so the picker stops offering them and
+          // old saves migrate cleanly.
           item !== "community-plugins.json" &&
+          item !== "graph.json" &&
           !item.startsWith("plugins/")
       )
     )

@@ -445,9 +445,9 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     const listing = await this.app.vault.adapter.list(configDir);
     for (const filePath of listing.files) {
       const relative = filePath.slice(configDir.length + 1);
-      // Workspace layout and plugin sync are always excluded, so they stay
-      // out of the picker entirely.
-      if (!/^workspace.*\.json$/i.test(relative) && relative !== "community-plugins.json") {
+      // Workspace layout, plugin files and graph.json are always excluded, so
+      // they stay out of the picker entirely.
+      if (!/^workspace.*\.json$/i.test(relative) && relative !== "community-plugins.json" && relative !== "graph.json") {
         push(relative, false, false);
       }
     }

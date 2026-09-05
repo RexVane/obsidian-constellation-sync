@@ -23,7 +23,10 @@ export function isAlwaysExcluded(path: string, configDir: string): boolean {
     `${configRoot}/cache/**`,
     `${configRoot}/workspace*.json`,
     `${configRoot}/plugins/**`,
-    `${configRoot}/community-plugins.json`
+    `${configRoot}/community-plugins.json`,
+    // The graph view rewrites this file on every interaction, which turns each
+    // cycle into a mid-sync change; it carries little value and high churn.
+    `${configRoot}/graph.json`
   ];
   return [...ALWAYS_EXCLUDED, ...configPatterns].some((pattern) => globToRegExp(pattern).test(normalized));
 }

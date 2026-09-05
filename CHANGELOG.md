@@ -11,6 +11,11 @@
 - Workspace layout and cache are always excluded, and plugin code files are never uploaded — only the configuration you explicitly pick.
 - The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
 
+## 0.5.2 — Graph settings out of sync
+
+- `graph.json` is hard-excluded: the graph view rewrites it on every interaction, turning each cycle into a mid-sync change while carrying little value. The exclusion applies on every device once updated — no manual unchecking needed — and stale selections migrate out automatically. Existing graph.json files are frozen, not deleted.
+- Stale artifacts (conflict copies from first adoption, frozen plugin data files) were removed from the sync branch.
+
 ## 0.5.1 — Fast sync by default
 
 - The local push debounce now defaults to 5 seconds (was 30 s): with the default 15 s check interval, the worst-case cross-device latency drops to roughly 20 seconds. Devices that explicitly picked 15 s or 60 s keep their choice.
