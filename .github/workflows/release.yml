@@ -35,7 +35,7 @@ jobs:
           ref: ${{ env.SOURCE_REF }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
