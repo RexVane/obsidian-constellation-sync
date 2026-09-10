@@ -590,7 +590,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     this.setStatus("needs-review", "The remote changed; review the updated sync plan");
   }
 
-  private async performSync(quiet = false): Promise<void> {
+  private async performSync(quiet = false, concurrentRetry = 0): Promise<void> {
     if (!this.settings.binding) throw new Error("No vault branch is bound.");
     if (!this.settings.account) throw new Error("Connect GitHub before synchronizing.");
     if (this.settings.paused) {
@@ -625,8 +625,14 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       }, quiet);
     } catch (error) {
       if (error instanceof SyncChangedDuringRunError) {
-        if (!quiet) this.setStatus("scanning", "Files changed during sync; retrying with a fresh plan");
-        this.scheduleLocalSync();
+        if (concurrentRetry < 2) {
+          if (!quiet) this.setStatus("scanning", "Files changed during sync; retrying with a fresh plan");
+          await sleep(300 * 2 ** concurrentRetry);
+          await this.performSync(quiet, concurrentRetry + 1);
+          return;
+        }
+        if (quiet) this.scheduleLocalSync();
+        else this.setStatus("idle", "The remote kept changing; sync again after the other device finishes");
         return;
       }
       if (error instanceof SyncReviewRequiredError) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CommitChanges } from "../src/github/github-client";
-import { SyncEngine, type SyncGithubPort } from "../src/sync/engine";
+import { GitHubApiError } from "../src/github/github-client";
+import { SyncChangedDuringRunError, SyncEngine, type SyncGithubPort } from "../src/sync/engine";
 import { EMPTY_DIRECTORY_MARKER } from "../src/sync/empty-directories";
 import type { LocalScan, VaultStore } from "../src/sync/vault-store";
 import type { RepositoryBinding, SnapshotManifest } from "../src/types";
@@ -39,6 +40,7 @@ class MemoryVault implements VaultStore {
 class MemoryGitHub implements SyncGithubPort {
   head = "head-1";
   failCommit = false;
+  failGitDataWith?: Error;
   snapshotCalls = 0;
   constructor(readonly files = new Map<string, Uint8Array>(), readonly historical = new Map<string, Uint8Array>()) {}
 
@@ -67,6 +69,7 @@ class MemoryGitHub implements SyncGithubPort {
   }
 
   async createCommitWithGitData(repository: RepositoryBinding["repository"], branch: string, expected: string, message: string, changes: CommitChanges): Promise<string> {
+    if (this.failGitDataWith) throw this.failGitDataWith;
     return this.createCommitOnBranch(repository, branch, expected, message, changes);
   }
 }
@@ -206,6 +209,24 @@ describe("sync engine", () => {
 
     expect(vault.files.get("local.md")).toEqual(localBytes);
     expect(vault.files.has("remote.md")).toBe(false);
+  });
+
+  it("turns a non-fast-forward Git Data update into a retryable sync change", async () => {
+    const largeBytes = new Uint8Array(4 * 1024 * 1024);
+    const vault = new MemoryVault(new Map([["large.bin", largeBytes]]));
+    const github = new MemoryGitHub();
+    const engine = new SyncEngine(github, vault);
+    const plan = await engine.createPlan(binding, {});
+    github.failGitDataWith = new GitHubApiError("Update is not a fast forward", 422, "http-422");
+
+    await expect(
+      engine.execute(
+        binding,
+        plan,
+        { planId: plan.id, confirmInitialMerge: false, confirmMassDeletion: false, confirmLargeFiles: false },
+        "laptop"
+      )
+    ).rejects.toBeInstanceOf(SyncChangedDuringRunError);
   });
 
   it("does not advance the base when the remote moves while a download lands", async () => {

@@ -68,7 +68,7 @@ No build variables are required: the plugin contains no OAuth client ID, no clie
 
 ## Status
 
-Version `0.6.0` synchronizes vault content only, with Obsidian and GitHub configuration directories always excluded. Connecting is a matter of creating a GitHub token and pasting it in; first-time binding can use the repository's default branch, a new branch, or an existing vault branch. Background checks run silently every 15 seconds by default, and local edits are pushed after 5 seconds by default.
+Version `0.6.1` synchronizes vault content only, with Obsidian and GitHub configuration directories always excluded. Connecting is a matter of creating a GitHub token and pasting it in; first-time binding can use the repository's default branch, a new branch, or an existing vault branch. Background checks run silently every 15 seconds by default, and local edits are pushed after 5 seconds by default.
 
 ## License
 

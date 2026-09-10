@@ -527,7 +527,10 @@ function repoPath(repository: RepositoryRef): string {
 
 /** True when GitHub rejected a commit because the branch had already moved. */
 export function isStaleHeadError(error: unknown): boolean {
-  return error instanceof GitHubApiError && /expected branch to point to/i.test(error.message);
+  return error instanceof GitHubApiError && (
+    error.code === "head-mismatch" ||
+    /expected branch to point to|not a fast forward|reference update failed/i.test(error.message)
+  );
 }
 
 function isEmptyRepositoryError(error: unknown): error is GitHubApiError {

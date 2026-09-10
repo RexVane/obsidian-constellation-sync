@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RequestUrlParam, RequestUrlResponse } from "obsidian";
 import type { GitHubAuth } from "../src/auth/github-auth";
-import { GitHubClient, isStaleHeadError, selectCanonicalVaults } from "../src/github/github-client";
+import { GitHubApiError, GitHubClient, isStaleHeadError, selectCanonicalVaults } from "../src/github/github-client";
 import { bytesToBase64, utf8 } from "../src/utils/encoding";
 import type { RemoteVaultSummary, RepositoryRef, VaultMetadata } from "../src/types";
 
@@ -193,6 +193,9 @@ describe("GitHub client request contracts", () => {
       .then(() => null, (error: unknown) => error);
 
     expect(isStaleHeadError(failure)).toBe(true);
+    expect(isStaleHeadError(new GitHubApiError("Update is not a fast forward", 422, "http-422"))).toBe(true);
+    expect(isStaleHeadError(new GitHubApiError("Remote branch changed before commit.", 409, "head-mismatch"))).toBe(true);
+    expect(isStaleHeadError(new GitHubApiError("Validation failed", 422, "http-422"))).toBe(false);
     // A different failure must not be mistaken for a stale head.
     expect(isStaleHeadError(new Error("network down"))).toBe(false);
   });

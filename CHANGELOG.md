@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 - Retry concurrent Git Data updates
+
+- Treat GitHub's `422 Update is not a fast forward` response as a concurrent branch change instead of a permanent synchronization error. The engine rebuilds the plan and retries safely without overwriting the other device's commit or adding a false error to activity history.
+
 ## 0.6.0 - Notes-only sync and explicit delete-conflict resolution
 
 - Remove Obsidian configuration sync completely. The vault configuration directory (normally `.obsidian/`) and `.github/` are always excluded; configuration files left remotely by earlier versions are ignored and left untouched.

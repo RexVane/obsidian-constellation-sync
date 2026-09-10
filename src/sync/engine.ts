@@ -1,4 +1,4 @@
-import { GitHubApiError, type CommitChanges, type GitHubClient } from "../github/github-client";
+import { GitHubApiError, isStaleHeadError, type CommitChanges, type GitHubClient } from "../github/github-client";
 import {
   type ConflictRecord,
   type RepositoryBinding,
@@ -50,8 +50,8 @@ export class SyncReviewRequiredError extends Error {
 }
 
 export class SyncChangedDuringRunError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "SyncChangedDuringRunError";
   }
 }
@@ -376,10 +376,17 @@ export class SyncEngine {
     const useGitData =
       additionBytes >= GRAPHQL_MAX_BYTES ||
       changes.additions.length + changes.deletions.length > GRAPHQL_MAX_FILES;
-    if (useGitData) {
-      return this.github.createCommitWithGitData(binding.repository, binding.branch, expectedHeadOid, message, changes);
+    try {
+      if (useGitData) {
+        return await this.github.createCommitWithGitData(binding.repository, binding.branch, expectedHeadOid, message, changes);
+      }
+      return await this.github.createCommitOnBranch(binding.repository, binding.branch, expectedHeadOid, message, changes);
+    } catch (error) {
+      if (isStaleHeadError(error)) {
+        throw new SyncChangedDuringRunError("The remote branch changed while the sync commit was being published.", { cause: error });
+      }
+      throw error;
     }
-    return this.github.createCommitOnBranch(binding.repository, binding.branch, expectedHeadOid, message, changes);
   }
 
   // Conflict copies are staged rather than written, so vault.exists cannot see
