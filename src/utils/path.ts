@@ -1,5 +1,6 @@
 const ALWAYS_EXCLUDED = [
   ".git/**",
+  ".github/**",
   ".trash/**",
   "**/.DS_Store",
   "**/Thumbs.db"
@@ -19,46 +20,22 @@ export function normalizeRepoPath(input: string): string {
 export function isAlwaysExcluded(path: string, configDir: string): boolean {
   const normalized = path.replace(/\\/g, "/");
   const configRoot = normalizeConfigDir(configDir);
-  const configPatterns = [
-    `${configRoot}/cache/**`,
-    `${configRoot}/workspace*.json`,
-    `${configRoot}/plugins/**`,
-    `${configRoot}/community-plugins.json`,
-    // The graph view rewrites this file on every interaction, which turns each
-    // cycle into a mid-sync change; it carries little value and high churn.
-    `${configRoot}/graph.json`
-  ];
-  return [...ALWAYS_EXCLUDED, ...configPatterns].some((pattern) => globToRegExp(pattern).test(normalized));
+  const normalizedLower = normalized.normalize("NFC").toLocaleLowerCase("en-US");
+  const configLower = configRoot.normalize("NFC").toLocaleLowerCase("en-US");
+  if (normalizedLower === configLower || normalizedLower.startsWith(`${configLower}/`)) return true;
+  return ALWAYS_EXCLUDED.some((pattern) => globToRegExp(pattern).test(normalized));
 }
 
-export function shouldSyncPath(
-  path: string,
-  configDir: string,
-  syncedConfigPaths: ReadonlySet<string> = new Set()
-): boolean {
+export function shouldSyncPath(path: string, configDir: string): boolean {
   const normalized = normalizeRepoPath(path);
-  const configRoot = normalizeConfigDir(configDir);
-  if (isAlwaysExcluded(normalized, configRoot)) return false;
-
-  const configPrefix = `${configRoot}/`;
-  if (normalized.startsWith(configPrefix)) {
-    const relative = normalized.slice(configPrefix.length);
-    for (const entry of syncedConfigPaths) {
-      if (entry.endsWith("/")) {
-        if (relative.startsWith(entry)) return true;
-      } else if (relative === entry) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  return true;
+  return !isAlwaysExcluded(normalized, configDir);
 }
 
 export function validatePortablePath(path: string): string[] {
-  const normalized = normalizeRepoPath(path).normalize("NFC");
+  const repoPath = normalizeRepoPath(path);
   const errors: string[] = [];
+  if (repoPath !== path || path !== path.normalize("NFC")) errors.push("noncanonical-path");
+  const normalized = repoPath.normalize("NFC");
   for (const segment of normalized.split("/")) {
     if (WINDOWS_RESERVED.test(segment)) errors.push("windows-reserved-name");
     if (WINDOWS_INVALID.test(segment) || Array.from(segment).some((char) => char.charCodeAt(0) < 32)) errors.push("windows-invalid-character");
@@ -99,7 +76,7 @@ export function globToRegExp(pattern: string): RegExp {
       output += char?.replace(/[|\\{}()[\]^$+?.]/g, "\\$&") ?? "";
     }
   }
-  return new RegExp(`${output}$`);
+  return new RegExp(`${output}$`, "i");
 }
 
 function normalizeConfigDir(input: string): string {

@@ -30,7 +30,6 @@ Constellation Sync is an Obsidian community plugin for synchronizing multiple va
 ## Data model
 
 - One dedicated GitHub repository can contain multiple vaults. Private is recommended; if you pick a public repository, everything synced becomes publicly visible.
-- Each vault lives at the root of one non-default branch.
 - The branch name is the vault's shared English name, such as `work-notes`.
 - `.constellation-sync/vault.json` stores a stable `vaultId`, so devices can follow branch renames safely.
 - A vault uses either the repository's default branch (the simple choice for a dedicated repository) or a dedicated non-default branch named after the vault's shared English name, which lets one repository hold several vaults.
@@ -43,16 +42,18 @@ The plugin compares what changed locally and remotely against the last successfu
 
 Local files are rewritten only after the remote commit succeeds, so a failed push leaves the vault exactly as you left it. A path that cannot be stored safely on every platform is skipped and reported rather than stalling the rest of the vault.
 
+Only vault content is synchronized. The complete Obsidian configuration directory (normally `.obsidian/`) and GitHub repository configuration (`.github/`) are always excluded. Configuration files left on a branch by an older plugin version are ignored and left untouched; configure Obsidian, themes, snippets and plugins separately on each device.
+
 ## Security
 
-The plugin connects with a GitHub personal access token that you create once and paste into the plugin. The token is stored only in Obsidian SecretStorage and is never written to your notes, `data.json`, or Git history. A fine-grained token can be limited to the dedicated sync repository with only Contents read/write permission; the classic token pre-filled by the plugin carries the broader `repo` scope and is best created with no expiration. You can revoke the token at any time on GitHub. A private repository controls access, but it is not end-to-end encryption: GitHub and anyone with repository access can read the synchronized files. See [`docs/github-token-setup.md`](docs/github-token-setup.md) for step-by-step instructions.
+The plugin connects with a GitHub personal access token that you create once and paste into the plugin. The token is stored only in Obsidian SecretStorage and is never written to your notes, `data.json`, or Git history. A fine-grained token can be limited to the dedicated sync repository with only Contents read/write permission. Classic tokens also work, but their broader `repo` scope is not recommended. You can revoke the token at any time on GitHub. A private repository controls access, but it is not end-to-end encryption: GitHub and anyone with repository access can read the synchronized files. See [`docs/github-token-setup.md`](docs/github-token-setup.md) for step-by-step instructions.
 
 This repository intentionally contains no user tokens, client secrets, local vault data or `.env.local` files. Compiled `main.js` is kept out of the source branch and attached only to versioned GitHub Releases.
 
 ## Build from source
 
 1. Download or clone this repository.
-2. Install Node.js 20 or newer and run `npm ci`.
+2. Install Node.js 20.19 or newer and run `npm ci`.
 3. Run `npm run build`.
 4. Copy `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/constellation-sync/`, then enable the plugin in Obsidian.
 
@@ -67,7 +68,7 @@ No build variables are required: the plugin contains no OAuth client ID, no clie
 
 ## Status
 
-Version `0.3.0` is the current release: connecting is a matter of creating a GitHub token and pasting it in, with the creation steps spelled out in the login screen. First-time binding can use the repository's default branch, a new branch, or an existing vault branch. Background checks run silently every 15 seconds by default (configurable in Settings) and stay invisible when nothing changed, so "last successful sync" only counts real change transfers.
+Version `0.6.0` synchronizes vault content only, with Obsidian and GitHub configuration directories always excluded. Connecting is a matter of creating a GitHub token and pasting it in; first-time binding can use the repository's default branch, a new branch, or an existing vault branch. Background checks run silently every 15 seconds by default, and local edits are pushed after 5 seconds by default.
 
 ## License
 

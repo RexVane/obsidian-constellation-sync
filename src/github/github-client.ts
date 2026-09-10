@@ -251,8 +251,12 @@ export class GitHubClient {
       body: { ref: `refs/heads/${branch}`, sha: defaultHead }
     });
 
-    const inherited = await this.getTree(repository, await this.getCommitTree(repository, defaultHead), true);
-    const deletions = inherited.tree.filter((entry) => entry.type === "blob").map((entry) => entry.path);
+    const inheritedRoot = await this.getCommitTree(repository, defaultHead);
+    const inherited = await this.getTree(repository, inheritedRoot, true);
+    const inheritedEntries = inherited.truncated ? await this.walkTree(repository, inheritedRoot) : inherited.tree;
+    const deletions = inheritedEntries
+      .filter((entry) => entry.type === "blob" && entry.path !== VAULT_META_PATH)
+      .map((entry) => entry.path);
     return this.createCommitOnBranch(repository, branch, defaultHead, `Initialize ${branch}`, {
       additions: [{ path: VAULT_META_PATH, bytes: utf8(JSON.stringify(metadata, null, 2) + "\n") }],
       deletions
@@ -344,7 +348,13 @@ export class GitHubClient {
     message: string,
     changes: CommitChanges
   ): Promise<string> {
-    const currentHead = await this.getBranchHead(repository, branch);
+    // Pre-check the head through the same strong-consistency channel as the
+    // GraphQL createCommitOnBranch mutation, instead of the REST ref endpoint
+    // that replica-lags behind a recent write. The blob/tree/commit creation below
+    // is still not atomic with the ref update, but the ref PATCH refuses to move
+    // a branch that has meanwhile moved, so a losing run fails loudly and
+    // replans on retry instead of overwriting a newer commit.
+    const currentHead = await this.getBranchHeadForCommit(repository, branch);
     if (currentHead !== expectedHeadOid) throw new GitHubApiError("Remote branch changed before commit.", 409, "head-mismatch");
     const baseCommit = await this.api<{ tree: { sha: string } }>(`${repoPath(repository)}/git/commits/${expectedHeadOid}`);
     const treeEntries: Array<{ path: string; mode: "100644"; type: "blob"; sha: string | null }> = [];
@@ -430,7 +440,9 @@ export class GitHubClient {
     const value = response.json as { data?: T; errors?: Array<{ message: string; type?: string }> };
     if (response.status >= 400 || value.errors?.length || !value.data) {
       const message = value.errors?.map((error) => error.message).join("; ") || `GitHub GraphQL failed with ${response.status}.`;
-      throw new GitHubApiError(message, response.status, value.errors?.[0]?.type ?? "graphql-error", response.headers["x-github-request-id"]);
+      const errorType = value.errors?.[0]?.type?.toLowerCase();
+      const code = errorType === "rate_limited" || errorType === "rate-limited" ? "rate-limited" : errorType ?? "graphql-error";
+      throw new GitHubApiError(message, response.status, code, response.headers["x-github-request-id"]);
     }
     return value.data;
   }
@@ -461,7 +473,17 @@ export class GitHubClient {
 
   private async requestWithBackoff(request: RequestUrlParam): Promise<RequestUrlResponse> {
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      const response = await this.sendRequest(request);
+      let response: RequestUrlResponse;
+      try {
+        response = await this.sendRequest(request);
+      } catch (error) {
+        if (attempt === 3) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new GitHubApiError(message, 0, "network-error");
+        }
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 2 ** attempt * 1000));
+        continue;
+      }
       this.captureRateLimit(response);
       if (!shouldRetry(response) || attempt === 3) return response;
       await waitForRetry(response, attempt);
@@ -472,8 +494,10 @@ export class GitHubClient {
   private captureRateLimit(response: RequestUrlResponse): void {
     const remaining = response.headers["x-ratelimit-remaining"];
     const reset = response.headers["x-ratelimit-reset"];
-    this.rateLimitRemaining = remaining === undefined ? this.rateLimitRemaining : Number(remaining);
-    this.rateLimitResetAt = reset === undefined ? this.rateLimitResetAt : Number(reset) * 1000;
+    const parsedRemaining = remaining === undefined ? Number.NaN : Number(remaining);
+    const parsedReset = reset === undefined ? Number.NaN : Number(reset) * 1000;
+    if (Number.isFinite(parsedRemaining)) this.rateLimitRemaining = parsedRemaining;
+    if (Number.isFinite(parsedReset)) this.rateLimitResetAt = parsedReset;
   }
 }
 

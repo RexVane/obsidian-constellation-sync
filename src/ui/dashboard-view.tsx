@@ -3,11 +3,11 @@ import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { DashboardController, DashboardSnapshot } from "../controller";
 import { translator, type TranslationKey } from "../i18n";
-import type { ConfigFileInfo, ConflictRecord, SyncPlanSummary } from "../types";
+import type { ConflictRecord, SyncPlanSummary } from "../types";
 
 export const DASHBOARD_VIEW_TYPE = "constellation-sync-dashboard";
 
-const TOKEN_CREATION_URL = "https://github.com/settings/tokens/new?description=Constellation%20Sync&scopes=repo";
+const TOKEN_CREATION_URL = "https://github.com/settings/personal-access-tokens/new";
 
 export class ConstellationDashboardView extends ItemView {
   constructor(
@@ -101,7 +101,7 @@ function LoginPanel(props: PanelProps): preact.JSX.Element {
             <Icon name="key-round" /> {t("createToken")}
           </button>
         </div>
-        <p class="cs-muted">{t("tokenClassicHelp")}</p>
+        <p class="cs-muted">{t("tokenPrimaryHelp")}</p>
         <label class="cs-field">
           <span>{t("tokenField")}</span>
           <input
@@ -119,7 +119,7 @@ function LoginPanel(props: PanelProps): preact.JSX.Element {
         >
           {t("connectGithub")}
         </button>
-        <p class="cs-muted">{t("tokenFineHelp")}</p>
+        <p class="cs-muted">{t("tokenAlternativeHelp")}</p>
       </div>
     </section>
   );
@@ -245,7 +245,14 @@ function OverviewSections({ snapshot, controller, run, t }: PanelProps): preact.
               <div class="cs-list-row cs-conflict-row">
                 <Icon name="triangle-alert" />
                 <span><strong>{item.path}</strong><small>{item.reason}{item.conflictPath ? ` · ${item.conflictPath}` : ""} · {formatDate(item.createdAt)}</small></span>
-                <button class="cs-button" onClick={() => void run(() => controller.resolveConflict(item.id))}>{t("markResolved")}</button>
+                {item.reason === "local-delete-remote-modify" ? (
+                  <span class="cs-actions">
+                    <button class="cs-button" onClick={() => void run(() => controller.resolveDeleteConflict(item.id, "restore-remote"))}>{t("deleteConflictRestore")}</button>
+                    <button class="cs-button is-danger" onClick={() => void run(() => controller.resolveDeleteConflict(item.id, "delete-remote"))}>{t("deleteConflictDeleteRemote")}</button>
+                  </span>
+                ) : (
+                  <button class="cs-button" onClick={() => void run(() => controller.resolveConflict(item.id))}>{t("markResolved")}</button>
+                )}
               </div>
             ))}
           </div>
@@ -268,43 +275,8 @@ function SettingsSections({ snapshot, controller, run, t }: PanelProps): preact.
   const [name, setName] = useState(binding?.branch ?? "");
   const [deviceName, setDeviceName] = useState(settings.deviceName);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
-  const [configRows, setConfigRows] = useState<ConfigFileInfo[] | null>(null);
-  const [configScanning, setConfigScanning] = useState(true);
 
   useEffect(() => setName(binding?.branch ?? ""), [binding?.branch]);
-  useEffect(() => {
-    const startedAt = Date.now();
-    controller
-      .scanConfigFiles()
-      .then((rows) => setConfigRows(rows))
-      .catch(() => setConfigRows([]))
-      .finally(async () => {
-        await waitOutScanSpin(startedAt);
-        setConfigScanning(false);
-      });
-  }, [controller]);
-
-  const toggleConfigRow = (path: string): void => {
-    setConfigRows((rows) => rows?.map((row) => (row.path === path ? { ...row, selected: !row.selected } : row)) ?? rows);
-  };
-
-  const saveConfigRows = async (): Promise<void> => {
-    if (!configRows) return;
-    await run(() => controller.updateSyncedConfigPaths(configRows.filter((row) => row.selected).map((row) => row.path)));
-  };
-
-  const rescanConfigRows = async (): Promise<void> => {
-    setConfigScanning(true);
-    const startedAt = Date.now();
-    try {
-      await run(() => controller.scanConfigFiles().then((rows) => setConfigRows(rows)));
-      // A local scan finishes in milliseconds; hold the spinner for a full
-      // rotation so the feedback is actually visible.
-      await waitOutScanSpin(startedAt);
-    } finally {
-      setConfigScanning(false);
-    }
-  };
 
   return (
     <>
@@ -344,38 +316,6 @@ function SettingsSections({ snapshot, controller, run, t }: PanelProps): preact.
         <div class="cs-setting-row"><span><strong>{t("deviceName")}</strong></span><div class="cs-inline-field"><input aria-label={t("deviceName")} value={deviceName} onInput={(event) => setDeviceName(event.currentTarget.value)} /><button class="cs-button" onClick={() => void run(() => controller.updatePreference("deviceName", deviceName))}>{t("save")}</button></div></div>
       </section>
       <section class="cs-card">
-        <div class="cs-card-header">
-          <div><p class="cs-kicker">{t("configSyncTitle")}</p><h2>{t("configSyncHeading")}</h2></div>
-          <div class="cs-actions">
-            <button class="cs-button" disabled={busy(snapshot) || configScanning} onClick={() => void run(() => rescanConfigRows())}>
-              <span class={configScanning ? "cs-spin" : ""}><Icon name="refresh-cw" /></span> {t("configScan")}
-            </button>
-          </div>
-        </div>
-        <p class="cs-muted">{t("configSyncHelp")}</p>
-        {configRows && configRows.length > 0 ? (
-          <div class="cs-config-list">
-            {configRows.map((row) => (
-              <div key={row.path} class={`cs-config-row ${row.disabled ? "is-disabled" : ""}`}>
-                <input
-                  type="checkbox"
-                  aria-label={describeConfigPath(row.path, t)}
-                  disabled={row.disabled}
-                  checked={row.selected}
-                  onChange={() => toggleConfigRow(row.path)}
-                />
-                <span><strong>{describeConfigPath(row.path, t)}</strong><small>{row.path}</small></span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p class="cs-muted">{t("configScanPending")}</p>
-        )}
-        <div class="cs-actions">
-          <button class="cs-button cs-button-primary" disabled={!configRows || configRows.length === 0 || busy(snapshot)} onClick={() => void run(() => saveConfigRows())}>{t("save")}</button>
-        </div>
-      </section>
-        <section class="cs-card">
         <p class="cs-kicker">{t("advanced")}</p>
         <div class="cs-advanced-body">
           <Definition label={t("status")} value={snapshot.status.kind} />
@@ -410,29 +350,10 @@ const DEBOUNCE_OPTIONS: Array<[number, TranslationKey]> = [
   [60_000, "interval60s"]
 ];
 
-/** The scan itself is near-instant, so the spinner is held for at least one
- * full rotation — an imperceptible flash reads as "nothing happened". */
-const MIN_SCAN_SPIN_MS = 1_000;
-
-async function waitOutScanSpin(startedAt: number): Promise<void> {
-  const remaining = MIN_SCAN_SPIN_MS - (Date.now() - startedAt);
-  if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
-}
-
 function formatSize(sizeKb: number): string {
   if (sizeKb < 1024) return `${Math.round(sizeKb)} KB`;
   if (sizeKb < 1024 * 1024) return `${(sizeKb / 1024).toFixed(1)} MB`;
   return `${(sizeKb / 1024 / 1024).toFixed(2)} GB`;
-}
-
-function describeConfigPath(path: string, t: (key: TranslationKey) => string): string {
-  if (path === "appearance.json") return t("configLabelAppearance");
-  if (path === "app.json") return t("configLabelApp");
-  if (path === "hotkeys.json") return t("configLabelHotkeys");
-  if (path === "themes/") return t("configLabelThemes");
-  if (path === "snippets/") return t("configLabelSnippets");
-  if (path === "core-plugins.json") return t("configLabelCorePlugins");
-  return t("configLabelOther").replace("{path}", path);
 }
 
 function unresolvedConflicts(snapshot: DashboardSnapshot): ConflictRecord[] {

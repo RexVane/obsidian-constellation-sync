@@ -11,7 +11,21 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts"],
     coverage: {
-      reporter: ["text", "html"]
+      provider: "v8",
+      include: [
+        "src/auth/**/*.ts",
+        "src/github/**/*.ts",
+        "src/settings.ts",
+        "src/sync/**/*.ts",
+        "src/utils/**/*.ts"
+      ],
+      reporter: ["text", "html"],
+      thresholds: {
+        statements: 75,
+        branches: 65,
+        functions: 80,
+        lines: 80
+      }
     }
   }
 });

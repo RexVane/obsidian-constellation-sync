@@ -67,4 +67,19 @@ describe("sync planner", () => {
     expect(plan.blockedFiles).toEqual(["large.bin"]);
     expect(plan.largeFileWarnings).toEqual(["warning.bin"]);
   });
+
+  it("keeps an unresolved local-delete conflict from becoming a remote deletion", async () => {
+    const remoteEntry = entry("note.md", "remote");
+    const plan = await buildSyncPlan({
+      remoteHeadOid: "head",
+      baseCommitOid: "base",
+      base: { "note.md": remoteEntry },
+      local: {},
+      remote: { "note.md": remoteEntry },
+      pendingDeleteConflicts: new Set(["note.md"])
+    });
+
+    expect(plan.operations).toEqual([]);
+    expect(plan.summary.remoteDeletes).toBe(0);
+  });
 });

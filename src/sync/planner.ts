@@ -16,6 +16,13 @@ export interface PlanInput {
   local: SnapshotManifest;
   remote: SnapshotManifest;
   blockedPaths?: string[];
+  /**
+   * Paths whose "local delete vs. remote modify" conflict is still unresolved.
+   * A path here that would otherwise classify as "delete-remote" is suppressed,
+   * so a prior sync run can never silently delete the remote author's change or
+   * generate repeated no-op conflict activity before the user picks a side.
+   */
+  pendingDeleteConflicts?: ReadonlySet<string>;
 }
 
 export async function buildSyncPlan(input: PlanInput): Promise<SyncPlan> {
@@ -40,8 +47,11 @@ export async function buildSyncPlan(input: PlanInput): Promise<SyncPlan> {
     }
     if (maxSize >= LARGE_FILE_WARNING_BYTES) largeFileWarnings.push(path);
 
-    const operation = classify(path, base, local, remote, maxSize);
-    if (operation) operations.push(operation);
+    const plannedOperation = classify(path, base, local, remote, maxSize);
+    if (plannedOperation?.kind === "delete-remote" && input.pendingDeleteConflicts?.has(path)) {
+      continue;
+    }
+    if (plannedOperation) operations.push(plannedOperation);
   }
 
   blockedFiles.sort();

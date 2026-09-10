@@ -8,19 +8,11 @@ import { gitBlobOid } from "../src/utils/hash";
 
 class MemoryVault implements VaultStore {
   readonly blocked: string[] = [];
-  configSyncPaths: string[] = [];
+  onWrite?: (path: string, bytes: Uint8Array) => void;
   constructor(readonly files = new Map<string, Uint8Array>()) {}
 
   configDir(): string {
     return ".obsidian";
-  }
-
-  syncedConfigPaths(): string[] {
-    return this.configSyncPaths;
-  }
-
-  setSyncedConfigPaths(paths: string[]): void {
-    this.configSyncPaths = paths;
   }
 
   async scan(): Promise<LocalScan> {
@@ -35,7 +27,11 @@ class MemoryVault implements VaultStore {
     return Promise.resolve(bytes);
   }
 
-  write(path: string, bytes: Uint8Array): Promise<void> { this.files.set(path, bytes); return Promise.resolve(); }
+  write(path: string, bytes: Uint8Array): Promise<void> {
+    this.files.set(path, bytes);
+    this.onWrite?.(path, bytes);
+    return Promise.resolve();
+  }
   remove(path: string): Promise<void> { this.files.delete(path); return Promise.resolve(); }
   exists(path: string): Promise<boolean> { return Promise.resolve(this.files.has(path)); }
 }
@@ -173,6 +169,112 @@ describe("sync engine", () => {
     expect(execution.result.kind).toBe("success");
     expect(github.files.has("fine.md")).toBe(true);
     expect(github.files.has(unportable)).toBe(false);
+  });
+
+  it("skips unportable and colliding paths that originate on the remote", async () => {
+    const github = new MemoryGitHub(new Map([
+      ["Notes/Meeting: agenda.md", new TextEncoder().encode("bad")],
+      ["Notes/A.md", new TextEncoder().encode("upper")],
+      ["notes/a.md", new TextEncoder().encode("lower")],
+      ["fine.md", new TextEncoder().encode("good")]
+    ]));
+    const vault = new MemoryVault();
+    const engine = new SyncEngine(github, vault);
+    const plan = await engine.createPlan(binding, {});
+
+    expect(plan.blockedFiles).toEqual(["Notes/A.md", "Notes/Meeting: agenda.md", "notes/a.md"]);
+    expect(plan.operations).toEqual([expect.objectContaining({ kind: "download", path: "fine.md" })]);
+  });
+
+  it("does not apply downloads when a mixed run fails to push", async () => {
+    const localBytes = new TextEncoder().encode("local");
+    const remoteBytes = new TextEncoder().encode("remote");
+    const vault = new MemoryVault(new Map([["local.md", localBytes]]));
+    const github = new MemoryGitHub(new Map([["remote.md", remoteBytes]]));
+    const engine = new SyncEngine(github, vault);
+    const plan = await engine.createPlan(binding, {});
+    github.failCommit = true;
+
+    await expect(
+      engine.execute(
+        binding,
+        plan,
+        { planId: plan.id, confirmInitialMerge: false, confirmMassDeletion: false, confirmLargeFiles: false },
+        "laptop"
+      )
+    ).rejects.toThrow(/network down/);
+
+    expect(vault.files.get("local.md")).toEqual(localBytes);
+    expect(vault.files.has("remote.md")).toBe(false);
+  });
+
+  it("does not advance the base when the remote moves while a download lands", async () => {
+    const firstRemote = new TextEncoder().encode("first remote version");
+    const secondRemote = new TextEncoder().encode("concurrent remote version");
+    const vault = new MemoryVault();
+    const github = new MemoryGitHub(new Map([["note.md", firstRemote]]));
+    const engine = new SyncEngine(github, vault);
+    const plan = await engine.createPlan(binding, {});
+    vault.onWrite = () => {
+      github.files.set("note.md", secondRemote);
+      github.head = "head-2";
+    };
+
+    await expect(
+      engine.execute(
+        binding,
+        plan,
+        { planId: plan.id, confirmInitialMerge: false, confirmMassDeletion: false, confirmLargeFiles: false },
+        "laptop"
+      )
+    ).rejects.toThrow(/remote branch changed/i);
+
+    expect(vault.files.get("note.md")).toEqual(firstRemote);
+    delete vault.onWrite;
+    const followUp = await engine.createPlan(binding, {});
+    expect(followUp.operations).toEqual([
+      expect.objectContaining({ kind: "conflict", path: "note.md", reason: "initial-divergence" })
+    ]);
+  });
+
+  it("records a local-delete conflict once and supports either explicit resolution", async () => {
+    const baseBytes = new TextEncoder().encode("base");
+    const remoteBytes = new TextEncoder().encode("remote edit");
+    const baseOid = await gitBlobOid(baseBytes);
+    const github = new MemoryGitHub(new Map([["note.md", remoteBytes]]), new Map([["base", baseBytes]]));
+    const vault = new MemoryVault();
+    const engine = new SyncEngine(github, vault);
+    const base = { "note.md": { path: "note.md", oid: baseOid, size: baseBytes.length } };
+
+    const firstPlan = await engine.createPlan(binding, base);
+    const first = await engine.execute(
+      binding,
+      firstPlan,
+      { planId: firstPlan.id, confirmInitialMerge: false, confirmMassDeletion: false, confirmLargeFiles: false },
+      "laptop"
+    );
+    expect(first.conflicts).toHaveLength(1);
+
+    const pending = new Set(["note.md"]);
+    const repeatedPlan = await engine.createPlan({ ...binding, baseCommitOid: first.baseCommitOid }, first.manifest, pending);
+    expect(repeatedPlan.operations).toEqual([]);
+    const repeated = await engine.execute(
+      binding,
+      repeatedPlan,
+      { planId: repeatedPlan.id, confirmInitialMerge: false, confirmMassDeletion: false, confirmLargeFiles: false },
+      "laptop",
+      pending
+    );
+    expect(repeated.result.kind).toBe("noop");
+    expect(repeated.conflicts).toHaveLength(0);
+    expect(github.files.has("note.md")).toBe(true);
+
+    await engine.restoreRemoteFile(binding, "note.md");
+    expect(vault.files.get("note.md")).toEqual(remoteBytes);
+    vault.files.delete("note.md");
+    const deleted = await engine.deleteRemoteFile(binding, "note.md", "laptop");
+    expect(github.files.has("note.md")).toBe(false);
+    expect(deleted.manifest["note.md"]).toBeUndefined();
   });
 
   it("preserves local content in a conflict copy when text edits overlap", async () => {

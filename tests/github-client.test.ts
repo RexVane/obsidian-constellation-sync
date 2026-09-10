@@ -239,4 +239,39 @@ describe("GitHub client request contracts", () => {
     expect(parseBody(requests[5])).toEqual({ ref: "refs/heads/work-notes", sha: "bootstrap-commit" });
     expect(requests[8]?.url).toBe("https://api.github.com/graphql");
   });
+
+  it("walks a truncated inherited tree and replaces its vault marker once", async () => {
+    const requests: RequestUrlParam[] = [];
+    const queue = [
+      response({ object: { sha: "main-head" } }),
+      response({ ref: "refs/heads/work-notes" }),
+      response({ tree: { sha: "root-tree" } }),
+      response({ sha: "root-tree", truncated: true, tree: [] }),
+      response({ sha: "root-tree", truncated: false, tree: [
+        { path: ".constellation-sync", type: "tree", mode: "040000", sha: "meta-tree", url: "" },
+        { path: "docs", type: "tree", mode: "040000", sha: "docs-tree", url: "" },
+        { path: "root.md", type: "blob", mode: "100644", sha: "root-blob", size: 4, url: "" }
+      ] }),
+      response({ sha: "meta-tree", truncated: false, tree: [
+        { path: "vault.json", type: "blob", mode: "100644", sha: "old-marker", size: 4, url: "" }
+      ] }),
+      response({ sha: "docs-tree", truncated: false, tree: [
+        { path: "guide.md", type: "blob", mode: "100644", sha: "guide-blob", size: 4, url: "" }
+      ] }),
+      response({ data: { createCommitOnBranch: { commit: { oid: "vault-head" } } } })
+    ];
+    const client = new GitHubClient({ getValidAccessToken: () => "token" } as GitHubAuth, (request) => {
+      requests.push(request);
+      return Promise.resolve(queue.shift() ?? response({}, 500));
+    });
+
+    await expect(client.createVaultBranch(repository, vaultMetadata("work-notes"))).resolves.toBe("vault-head");
+
+    const body = parseBody(requests[7]);
+    const input = body.variables as {
+      input: { fileChanges: { additions: Array<{ path: string }>; deletions: Array<{ path: string }> } };
+    };
+    expect(input.input.fileChanges.additions.map((item) => item.path)).toEqual([".constellation-sync/vault.json"]);
+    expect(input.input.fileChanges.deletions.map((item) => item.path)).toEqual(["docs/guide.md", "root.md"]);
+  });
 });

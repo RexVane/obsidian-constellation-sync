@@ -26,8 +26,10 @@ export class GitHubAuth {
     const value = this.secrets.getSecret(SESSION_KEY);
     if (!value) return null;
     try {
-      const parsed = JSON.parse(value) as GitHubSession;
-      return typeof parsed.accessToken === "string" ? parsed : null;
+      const parsed = JSON.parse(value) as Partial<GitHubSession>;
+      if (typeof parsed.accessToken !== "string" || !parsed.accessToken.trim()) return null;
+      if (parsed.tokenType !== "pat") return null;
+      return { accessToken: parsed.accessToken, tokenType: parsed.tokenType };
     } catch {
       return null;
     }

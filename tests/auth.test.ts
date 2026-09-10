@@ -39,4 +39,12 @@ describe("GitHub token session storage", () => {
     auth.signOut();
     expect(() => auth.getValidAccessToken()).toThrow(/not connected/i);
   });
+
+  it("rejects malformed or legacy secret values", () => {
+    const secrets = new MemorySecrets();
+    secrets.setSecret("constellation-sync-github-session", "not json");
+    expect(new GitHubAuth(secrets).getSession()).toBeNull();
+    secrets.setSecret("constellation-sync-github-session", JSON.stringify({ accessToken: "token", tokenType: "oauth" }));
+    expect(new GitHubAuth(secrets).getSession()).toBeNull();
+  });
 });

@@ -30,7 +30,6 @@ Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 仓库的独�
 ## 数据模型
 
 - 一个专用的 GitHub 仓库可以包含多个笔记库。推荐私有仓库；如果选择公开仓库，同步的所有内容都会对公众可见。
-- 每个笔记库位于一个非默认分支的根目录中。
 - 分支名使用笔记库的共享英文名，例如 `work-notes`。
 - `.constellation-sync/vault.json` 保存稳定的 `vaultId`，因此分支改名后其他设备仍能跟随。
 - 默认分支只作为仓库入口，不用于存放笔记库数据。
@@ -43,16 +42,18 @@ Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 仓库的独�
 
 本地文件只在远端提交成功之后才被改写，因此推送失败时笔记库保持原样。无法在所有平台安全保存的路径会被跳过并列出，而不会拖住其余文件的同步。
 
+插件只同步笔记库内容。完整的 Obsidian 配置目录（通常为 `.obsidian/`）以及 GitHub 仓库配置目录（`.github/`）始终排除。旧版本遗留在同步分支上的配置文件会被忽略并保持原样；Obsidian 设置、主题、代码片段和插件应在每台设备上分别配置。
+
 ## 安全与隐私
 
-插件使用你创建并粘贴进来的 GitHub 个人访问令牌（PAT）连接 GitHub。令牌只保存在 Obsidian SecretStorage 中，绝不写入笔记文件、`data.json` 或 Git 历史。细粒度令牌（Fine-grained tokens）可以只授权同步仓库的 Contents 读写权限；插件预填的经典令牌带有更宽的 `repo` 权限，建议设置为永不过期。你随时可以在 GitHub 上吊销令牌。私有仓库只控制访问权限，并不等于端到端加密：GitHub 以及拥有仓库权限的人可以读取同步内容。分步操作说明见 [`docs/github-token-setup.zh-CN.md`](docs/github-token-setup.zh-CN.md)。
+插件使用你创建并粘贴进来的 GitHub 个人访问令牌（PAT）连接 GitHub。令牌只保存在 Obsidian SecretStorage 中，绝不写入笔记文件、`data.json` 或 Git 历史。细粒度令牌（Fine-grained tokens）可以只授权同步仓库的 Contents 读写权限。经典令牌也能使用，但其 `repo` 权限范围更广，因此不推荐。你随时可以在 GitHub 上吊销令牌。私有仓库只控制访问权限，并不等于端到端加密：GitHub 以及拥有仓库权限的人可以读取同步内容。分步操作说明见 [`docs/github-token-setup.zh-CN.md`](docs/github-token-setup.zh-CN.md)。
 
 本公开仓库不包含用户令牌、Client Secret、本地笔记或 `.env.local`。编译后的 `main.js` 不提交到源码分支，只作为带版本号的 GitHub Release 资产发布。
 
 ## 从源码构建
 
 1. 下载或克隆本仓库。
-2. 安装 Node.js 20 或更高版本，执行 `npm ci`。
+2. 安装 Node.js 20.19 或更高版本，执行 `npm ci`。
 3. 执行 `npm run build`。
 4. 将 `main.js`、`manifest.json` 和 `styles.css` 复制到 `<笔记库>/.obsidian/plugins/constellation-sync/`，然后在 Obsidian 中启用插件。
 
@@ -67,7 +68,7 @@ Constellation Sync 是一个 Obsidian 社区插件，通过 GitHub 仓库的独�
 
 ## 状态
 
-当前发布版本为 `0.2.3`：连接 GitHub 只需创建一个访问令牌并粘贴进来（登录页内置两种令牌的逐步说明）；首次绑定可以直接使用仓库默认分支，也可以新建分支或加入已有分支。后台检查默认每 15 秒一次（可在设置中调整），无变化时完全静默，"最近成功同步"只统计真正同步了变更的时间。
+当前发布版本为 `0.6.0`：只同步笔记库内容，始终排除 Obsidian 与 GitHub 配置目录。连接 GitHub 只需创建一个访问令牌并粘贴进来；首次绑定可以直接使用仓库默认分支，也可以新建分支或加入已有分支。后台检查默认每 15 秒一次，本地编辑默认在 5 秒后推送，无变化时完全静默。
 
 ## 开源协议
 

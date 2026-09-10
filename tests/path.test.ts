@@ -1,44 +1,32 @@
 import { describe, expect, it } from "vitest";
 import { findPortableCollisions, shouldSyncPath, validatePortablePath } from "../src/utils/path";
 
-const NOTHING = new Set<string>();
-const SELECTED = new Set(["appearance.json", "themes/", "snippets/"]);
-
 describe("portable paths and sync scope", () => {
   it("keeps mandatory exclusions strongest", () => {
-    expect(shouldSyncPath(".obsidian/plugins/constellation-sync/data.json", ".obsidian", SELECTED)).toBe(false);
-    expect(shouldSyncPath("Notes/today.md", ".obsidian", NOTHING)).toBe(true);
+    expect(shouldSyncPath(".git/config", ".obsidian")).toBe(false);
+    expect(shouldSyncPath(".github/workflows/release.yml", ".obsidian")).toBe(false);
+    expect(shouldSyncPath("Notes/today.md", ".obsidian")).toBe(true);
   });
 
-  it("excludes config contents unless they are explicitly selected", () => {
-    expect(shouldSyncPath(".obsidian/app.json", ".obsidian", SELECTED)).toBe(false);
-    expect(shouldSyncPath(".obsidian/appearance.json", ".obsidian", SELECTED)).toBe(true);
-    expect(shouldSyncPath(".obsidian/appearance.json", ".obsidian", NOTHING)).toBe(false);
-    expect(shouldSyncPath(".obsidian/themes/mine.css", ".obsidian", SELECTED)).toBe(true);
-    expect(shouldSyncPath(".obsidian/snippets/deep/nested.css", ".obsidian", SELECTED)).toBe(true);
-  });
-
-  it("never syncs plugin files, even when a stale selection names them", () => {
-    expect(shouldSyncPath(".obsidian/plugins/dataview/data.json", ".obsidian", SELECTED)).toBe(false);
-    expect(shouldSyncPath(".obsidian/plugins/dataview/main.js", ".obsidian", SELECTED)).toBe(false);
-    expect(
-      shouldSyncPath(".obsidian/plugins/dataview/data.json", ".obsidian", new Set(["plugins/dataview/data.json"]))
-    ).toBe(false);
-    expect(shouldSyncPath(".obsidian/community-plugins.json", ".obsidian", new Set(["community-plugins.json"]))).toBe(
-      false
-    );
+  it("always excludes the complete Obsidian configuration directory", () => {
+    expect(shouldSyncPath(".obsidian/app.json", ".obsidian")).toBe(false);
+    expect(shouldSyncPath(".obsidian/appearance.json", ".obsidian")).toBe(false);
+    expect(shouldSyncPath(".obsidian/themes/mine.css", ".obsidian")).toBe(false);
+    expect(shouldSyncPath(".obsidian/plugins/dataview/data.json", ".obsidian")).toBe(false);
+    expect(shouldSyncPath(".OBSIDIAN/plugins/dataview/main.js", ".obsidian")).toBe(false);
   });
 
   it("uses the vault's configured settings directory", () => {
     const configDir = ".settings";
-    const selection = new Set(["app.json"]);
-    expect(shouldSyncPath(`${configDir}/app.json`, configDir, selection)).toBe(true);
-    expect(shouldSyncPath(`${configDir}/cache/data.json`, configDir, selection)).toBe(false);
-    expect(shouldSyncPath("Notes/a.md", configDir, NOTHING)).toBe(true);
+    expect(shouldSyncPath(`${configDir}/app.json`, configDir)).toBe(false);
+    expect(shouldSyncPath(`${configDir}/cache/data.json`, configDir)).toBe(false);
+    expect(shouldSyncPath("Notes/a.md", configDir)).toBe(true);
   });
 
-  it("detects Windows-invalid namesand case collisions", () => {
+  it("detects Windows-invalid names and case collisions", () => {
     expect(validatePortablePath("Notes/con.md")).toContain("windows-reserved-name");
+    expect(validatePortablePath("Notes\\meeting.md")).toContain("noncanonical-path");
+    expect(validatePortablePath("Notes/cafe\u0301.md")).toContain("noncanonical-path");
     const collisions = findPortableCollisions(["Notes/A.md", "notes/a.md"]);
     expect(collisions.get("notes/a.md")).toEqual(["Notes/A.md", "notes/a.md"]);
   });

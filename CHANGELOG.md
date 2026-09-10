@@ -1,15 +1,12 @@
 # Changelog
 
-## 0.4.1 — Survive replica lag after a push
+## 0.6.0 - Notes-only sync and explicit delete-conflict resolution
 
-- A successful push was sometimes misread as a failure: the post-push snapshot comes from a REST replica that can lag behind the GraphQL write for a few seconds, so the run saw the pre-push head, retried, and then failed the retry with a stale-head error (the uploaded commit was actually fine). The engine now waits the replica out — up to ~13 s — before deciding the branch moved on.
-- A quiet background check that finds nothing to do now clears a stale error status, so one-off transient failures no longer linger after they stop reproducing.
-
-## 0.4.0 — Config sync
-
-- Selected Obsidian configuration now travels with the vault: the dashboard can scan `.obsidian/` and lets you tick what should sync. Appearance, editor settings, hotkeys, themes, snippets, and the enabled community plugins list are preselected; ticking a plugin's settings syncs its configuration, while the plugin itself is best installed from the community marketplace on each device.
-- Workspace layout and cache are always excluded, and plugin code files are never uploaded — only the configuration you explicitly pick.
-- The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
+- Remove Obsidian configuration sync completely. The vault configuration directory (normally `.obsidian/`) and `.github/` are always excluded; configuration files left remotely by earlier versions are ignored and left untouched.
+- A local deletion that races a remote edit now remains unresolved until the user explicitly restores the current remote version or deletes it remotely. Repeated syncs cannot silently convert the conflict into a remote deletion.
+- Validate paths from both local and remote manifests, including cross-side case and Unicode collisions, so an unsafe remote name is skipped instead of blocking or corrupting the rest of the sync.
+- Stage downloads and local deletions until the remote side is confirmed, and use the atomic Git Data ref update for large change sets instead of publishing several partial commits.
+- Harden persisted settings parsing, fix the new-install 5-second push delay, and validate all release metadata in CI.
 
 ## 0.5.2 — Graph settings out of sync
 
@@ -69,17 +66,28 @@
 
 - A quiet no-change check now persists a corrected base commit (once), so a lagging replica from a previous run cannot keep misclassifying remote configuration changes as conflicts on other devices.
 
+## 0.4.1 - Survive replica lag after a push
+
+- A successful push was sometimes misread as a failure: the post-push snapshot comes from a REST replica that can lag behind the GraphQL write for a few seconds, so the run saw the pre-push head, retried, and then failed the retry with a stale-head error (the uploaded commit was actually fine). The engine now waits the replica out for up to about 13 seconds before deciding the branch moved on.
+- A quiet background check that finds nothing to do now clears a stale error status, so one-off transient failures no longer linger after they stop reproducing.
+
+## 0.4.0 - Config sync
+
+- Selected Obsidian configuration now travels with the vault: the dashboard can scan `.obsidian/` and lets you tick what should sync. Appearance, editor settings, hotkeys, themes, snippets, and the enabled community plugins list are preselected; ticking a plugin's settings syncs its configuration, while the plugin itself is best installed from the community marketplace on each device.
+- Workspace layout and cache are always excluded, and plugin code files are never uploaded; only the configuration you explicitly pick is included.
+- The selection is stored per device and needs no protocol change: vault markers are untouched, and devices on older versions simply keep ignoring configuration files.
+
 ## 0.3.1 — Repository visibility badge
 
 - Repository cards in the setup screen show the visibility as a small gray badge (Private/Public) beside the repository name — GitHub-style — instead of icons.
 
 ## 0.3.0 — Drop the shared ignore rules and community plugin data
 
-Breaking change: the shared sync policy (ignore patterns, community plugin data,and the policyRevision protocol) is gone. Versions before this release cannot read vault markers written by this release,so all devices should upgrade before syncing again. Vault markers written by older versions remain readable..
+Breaking change: the shared sync policy (ignore patterns, community plugin data, and the `policyRevision` protocol) is gone. Versions before this release cannot read vault markers written by this release, so all devices should upgrade before syncing again. Vault markers written by older versions remain readable.
 
-- Remove the "Shared ignore patterns" and "Community plugin data" settings cards. Contents of the config directory (`.obsidian/`) are now always excluded from sync instead of being synced only for listed plugins..
-- Drop the shared policy revision machinery:as `policyRevision`/`syncPolicy` fields in vault.json and policy bookkeeping in settings. Stale policy fields in `data.json` are discarded on save.
-- Remove the redundant "Sync now" button from the page header;the overview dashboard keeps its sync action..
+- Remove the "Shared ignore patterns" and "Community plugin data" settings cards. Contents of the config directory (`.obsidian/`) are now always excluded from sync instead of being synced only for listed plugins.
+- Drop the shared policy revision machinery: `policyRevision`/`syncPolicy` fields in `vault.json` and policy bookkeeping in settings. Stale policy fields in `data.json` are discarded on save.
+- Remove the redundant "Sync now" button from the page header; the overview dashboard keeps its sync action.
 - Redesign the dashboard into a single scrolling page: the overview and settings pages merge, the sidebar navigation is replaced by a top status chip, and advanced diagnostics are always expanded.
 - Support private and public repositories: the picker lists every accessible repository with a visibility icon and an explicit warning for public ones, and syncing no longer blocks when a bound repository turns public. Private remains the recommended choice.
 - Show whole-repository storage usage in the metrics row (GitHub reports the size asynchronously, so it may lag behind the latest commit).

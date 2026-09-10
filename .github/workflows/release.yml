@@ -10,7 +10,7 @@ on:
       tag:
         description: Release tag to build and upload
         required: true
-        default: 0.1.4
+        default: 0.6.0
       source_ref:
         description: Git ref containing the source to build
         required: true
@@ -47,7 +47,7 @@ jobs:
         run: npm run build
 
       - name: Validate release version
-        run: node --input-type=module -e "const manifest = JSON.parse(await (await import('node:fs/promises')).readFile('manifest.json', 'utf8')); if (manifest.version !== process.env.RELEASE_TAG) throw new Error('manifest.version must match RELEASE_TAG');"
+        run: npm run release:check -- "$RELEASE_TAG"
 
       - name: Generate artifact attestations
         uses: actions/attest@v4

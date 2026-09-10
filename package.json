@@ -1,7 +1,7 @@
 {
   "name": "obsidian-constellation-sync",
-  "version": "0.5.2",
-  "description": "Multi-device Obsidian vault synchronization through branches in a private GitHub repository.",
+  "version": "0.6.0",
+  "description": "Multi-device Obsidian vault synchronization through GitHub repository branches.",
   "type": "module",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -9,8 +9,13 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run lint && npm run test && npm run build"
+    "release:check": "node scripts/validate-release.mjs",
+    "check": "npm run release:check && npm run typecheck && npm run lint && npm run test:coverage && npm run build"
+  },
+  "engines": {
+    "node": ">=20.19.0"
   },
   "keywords": [
     "obsidian",
@@ -24,14 +29,15 @@
     "preact": "^10.26.4"
   },
   "devDependencies": {
-    "@eslint/js": "^9.20.0",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.13.4",
+    "@vitest/coverage-v8": "^4.1.11",
     "esbuild": "^0.25.0",
-    "eslint": "^9.20.1",
+    "eslint": "^10.10.0",
     "globals": "^16.0.0",
-    "obsidian": "latest",
+    "obsidian": "1.11.4",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.24.0",
-    "vitest": "^3.0.5"
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^4.1.11"
   }
 }

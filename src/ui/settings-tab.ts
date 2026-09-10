@@ -1,6 +1,20 @@
-import { PluginSettingTab, Setting, type App, type SettingDefinitionItem } from "obsidian";
+import { PluginSettingTab, Setting, type App } from "obsidian";
 import type { DashboardController } from "../controller";
 import { translator } from "../i18n";
+
+interface SettingDefinitionItem {
+  type: "group";
+  heading: string;
+  items: Array<{
+    name: string;
+    desc?: string;
+    searchable?: boolean;
+    render?: (setting: Setting) => void;
+    control?:
+      | { type: "toggle"; key: string; defaultValue: boolean }
+      | { type: "text"; key: string; defaultValue: string };
+  }>;
+}
 
 export class ConstellationSettingTab extends PluginSettingTab {
   constructor(
@@ -10,7 +24,8 @@ export class ConstellationSettingTab extends PluginSettingTab {
     super(app, controller as never);
   }
 
-  override getSettingDefinitions(): SettingDefinitionItem[] {
+  // Obsidian 1.13+ discovers this method; older supported versions use display().
+  getSettingDefinitions(): SettingDefinitionItem[] {
     const snapshot = this.controller.snapshot();
     const t = translator(snapshot.settings.locale);
     return [
@@ -46,7 +61,7 @@ export class ConstellationSettingTab extends PluginSettingTab {
     ];
   }
 
-  override getControlValue(key: string): unknown {
+  getControlValue(key: string): unknown {
     const settings = this.controller.snapshot().settings;
     if (key === "autoSync") return settings.autoSync;
     if (key === "paused") return settings.paused;
@@ -54,7 +69,7 @@ export class ConstellationSettingTab extends PluginSettingTab {
     return undefined;
   }
 
-  override setControlValue(key: string, value: unknown): Promise<void> | void {
+  setControlValue(key: string, value: unknown): Promise<void> | void {
     if (key === "autoSync" && typeof value === "boolean") return this.controller.updatePreference("autoSync", value);
     if (key === "paused" && typeof value === "boolean") return this.controller.updatePreference("paused", value);
     // Typing through an empty field must not reject: the setter rejects a blank

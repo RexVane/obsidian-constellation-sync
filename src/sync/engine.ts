@@ -1,4 +1,4 @@
-import type { CommitChanges, GitHubClient } from "../github/github-client";
+import { GitHubApiError, type CommitChanges, type GitHubClient } from "../github/github-client";
 import {
   type ConflictRecord,
   type RepositoryBinding,
@@ -10,14 +10,14 @@ import {
 } from "../types";
 import { decodeUtf8, utf8 } from "../utils/encoding";
 import { gitBlobOid } from "../utils/hash";
-import { shouldSyncPath } from "../utils/path";
+import { findPortableCollisions, shouldSyncPath, validatePortablePath } from "../utils/path";
 import { mergeText } from "./merge";
 import { buildSyncPlan } from "./planner";
 import type { VaultStore } from "./vault-store";
 
 const MAX_TEXT_MERGE_BYTES = 2 * 1024 * 1024;
-const GRAPHQL_BATCH_BYTES = 4 * 1024 * 1024;
-const GRAPHQL_BATCH_FILES = 100;
+const GRAPHQL_MAX_BYTES = 4 * 1024 * 1024;
+const GRAPHQL_MAX_FILES = 100;
 
 type StagedLocalChange =
   | { kind: "write"; path: string; bytes: Uint8Array }
@@ -72,20 +72,39 @@ export class SyncEngine {
     snapshot: { headOid: string; manifest: SnapshotManifest };
   } | null = null;
 
-  async createPlan(binding: RepositoryBinding, base: SnapshotManifest): Promise<SyncPlan> {
+  async createPlan(
+    binding: RepositoryBinding,
+    base: SnapshotManifest,
+    pendingDeleteConflicts?: ReadonlySet<string>
+  ): Promise<SyncPlan> {
     const local = await this.vault.scan();
     const remote = await this.remoteSnapshot(binding);
     const configDir = this.vault.configDir();
-    const configSelection = new Set(this.vault.syncedConfigPaths());
-    const filteredBase = filterManifest(base, configDir, configSelection);
-    const filteredRemote = filterManifest(remote.manifest, configDir, configSelection);
+    const preparedBase = prepareManifest(base, configDir);
+    const preparedRemote = prepareManifest(remote.manifest, configDir);
+    const allPaths = [
+      ...Object.keys(preparedBase.manifest),
+      ...Object.keys(local.manifest),
+      ...Object.keys(preparedRemote.manifest)
+    ];
+    const blockedPaths = new Set([
+      ...local.blockedPaths,
+      ...preparedBase.blockedPaths,
+      ...preparedRemote.blockedPaths
+    ]);
+    for (const paths of findPortableCollisions(allPaths).values()) {
+      for (const path of paths) blockedPaths.add(path);
+    }
+    const filteredBase = omitPaths(preparedBase.manifest, blockedPaths);
+    const filteredRemote = omitPaths(preparedRemote.manifest, blockedPaths);
     return buildSyncPlan({
       ...(binding.baseCommitOid ? { baseCommitOid: binding.baseCommitOid } : {}),
       remoteHeadOid: remote.headOid,
       base: filteredBase,
       local: local.manifest,
       remote: filteredRemote,
-      blockedPaths: local.blockedPaths
+      blockedPaths: [...blockedPaths],
+      ...(pendingDeleteConflicts ? { pendingDeleteConflicts } : {})
     });
   }
 
@@ -93,7 +112,8 @@ export class SyncEngine {
     binding: RepositoryBinding,
     plan: SyncPlan,
     approval: SyncApproval,
-    deviceName: string
+    deviceName: string,
+    existingDeleteConflicts?: ReadonlySet<string>
   ): Promise<SyncExecution> {
     if (approval.planId !== plan.id) throw new SyncReviewRequiredError("The sync preview changed.", plan);
     if (plan.initial && plan.operations.length > 0 && !approval.confirmInitialMerge) {
@@ -126,7 +146,7 @@ export class SyncEngine {
     const reservedPaths = new Set<string>();
     for (const operation of plan.operations) {
       await this.assertLocalStable(operation);
-      await this.applyOperation(binding, operation, changes, staged, reservedPaths, conflicts, deviceName);
+      await this.applyOperation(binding, operation, changes, staged, reservedPaths, conflicts, deviceName, existingDeleteConflicts);
     }
 
     const pushed = changes.additions.length > 0 || changes.deletions.length > 0;
@@ -134,7 +154,7 @@ export class SyncEngine {
     if (pushed) {
       commitOid = await this.pushChanges(binding, currentHead, plan.id, deviceName, changes);
     } else if (await this.github.getBranchHeadForCommit(binding.repository, binding.branch) !== currentHead) {
-      throw new SyncChangedDuringRunError("The remote branch changed while local files were being applied.");
+      throw new SyncChangedDuringRunError("The remote branch changed before local files were applied.");
     }
 
     // The remote is durable from here on, so the staged local half can land.
@@ -143,15 +163,23 @@ export class SyncEngine {
       else await this.vault.remove(change.path);
     }
 
-    const refreshed = await this.refreshedSnapshot(binding, commitOid, pushed);
+    // A pull has no conditional remote mutation to close the race window. Check
+    // once more after landing local changes so a concurrent remote edit cannot
+    // be recorded as the base of bytes downloaded from the previous head.
+    if (!pushed && await this.github.getBranchHeadForCommit(binding.repository, binding.branch) !== currentHead) {
+      throw new SyncChangedDuringRunError("The remote branch changed while local files were being applied.");
+    }
+
+    const refreshed = await this.refreshedSnapshot(binding, commitOid);
     this.remoteSnapshotCache = { repositoryId: binding.repository.id, branch: binding.branch, snapshot: refreshed };
+    const changed = pushed || staged.length > 0 || conflicts.length > 0;
     return {
       result: {
-        kind: plan.operations.length === 0 ? "noop" : "success",
+        kind: changed ? "success" : "noop",
         plan,
         ...(pushed ? { commitOid } : {})
       },
-      manifest: filterManifest(refreshed.manifest, this.vault.configDir(), new Set(this.vault.syncedConfigPaths())),
+      manifest: omitPaths(prepareManifest(refreshed.manifest, this.vault.configDir()).manifest, new Set(plan.blockedFiles)),
       baseCommitOid: refreshed.headOid,
       conflicts
     };
@@ -164,16 +192,14 @@ export class SyncEngine {
   // the replica out; only a genuinely different head fails the run.
   private async refreshedSnapshot(
     binding: RepositoryBinding,
-    expectedHead: string,
-    pushed: boolean
+    expectedHead: string
   ): Promise<{ headOid: string; manifest: SnapshotManifest }> {
     const delays = [0, 1_000, 2_000, 4_000, 6_000];
-    let refreshed: { headOid: string; manifest: SnapshotManifest } | null = null;
     for (let attempt = 0; attempt < delays.length; attempt += 1) {
       const delay = delays[attempt] ?? 0;
       if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
-      refreshed = await this.github.getSnapshot(binding.repository, binding.branch);
-      if (!pushed || refreshed.headOid === expectedHead) return refreshed;
+      const refreshed = await this.github.getSnapshot(binding.repository, binding.branch);
+      if (refreshed.headOid === expectedHead) return refreshed;
     }
     throw new SyncChangedDuringRunError("The remote branch changed while the sync commit was being finalized.");
   }
@@ -203,21 +229,22 @@ export class SyncEngine {
     staged: StagedLocalChange[],
     reservedPaths: Set<string>,
     conflicts: ConflictRecord[],
-    deviceName: string
+    deviceName: string,
+    existingDeleteConflicts?: ReadonlySet<string>
   ): Promise<void> {
     if (operation.kind === "upload") {
       changes.additions.push({ path: operation.path, bytes: await this.vault.read(operation.path) });
       return;
     }
-    // Download and delete-local publish nothing, so applying them now is safe:
-    // a later failure just leaves work for the next run to redo.
+    // Pull-only operations are staged too. This keeps a later network or push
+    // failure from leaving a mixed run half-applied locally.
     if (operation.kind === "download") {
       if (!operation.remoteOid) throw new Error(`Missing remote OID for ${operation.path}`);
-      await this.vault.write(operation.path, await this.verifiedBlob(binding, operation.remoteOid));
+      staged.push({ kind: "write", path: operation.path, bytes: await this.verifiedBlob(binding, operation.remoteOid) });
       return;
     }
     if (operation.kind === "delete-local") {
-      await this.vault.remove(operation.path);
+      staged.push({ kind: "remove", path: operation.path });
       return;
     }
     if (operation.kind === "delete-remote") {
@@ -228,7 +255,7 @@ export class SyncEngine {
       await this.mergeOperation(binding, operation, changes, staged, reservedPaths, conflicts, deviceName);
       return;
     }
-    await this.conflictOperation(binding, operation, changes, staged, reservedPaths, conflicts, deviceName);
+    await this.conflictOperation(binding, operation, changes, staged, reservedPaths, conflicts, deviceName, existingDeleteConflicts);
   }
 
   private async assertLocalStable(operation: SyncOperation): Promise<void> {
@@ -281,13 +308,18 @@ export class SyncEngine {
     staged: StagedLocalChange[],
     reservedPaths: Set<string>,
     conflicts: ConflictRecord[],
-    deviceName: string
+    deviceName: string,
+    existingDeleteConflicts?: ReadonlySet<string>
   ): Promise<void> {
     if (operation.reason === "local-delete-remote-modify") {
-      if (!operation.remoteOid) throw new Error(`Missing remote OID for ${operation.path}`);
-      const remoteBytes = await this.verifiedBlob(binding, operation.remoteOid);
-      staged.push({ kind: "write", path: operation.path, bytes: remoteBytes });
-      conflicts.push(conflictRecord(operation.path, operation.reason));
+      // The file was deleted locally while another device modified it. Neither
+      // side wins silently: we do not auto-restore the remote version over the
+      // user's deletion, nor do we let a later plan turn this into a silent remote
+      // deletion. The conflict stays pending until the user picks Restore or
+      // Delete in the dashboard, and a fresh record is added only once.
+      if (!existingDeleteConflicts?.has(operation.path)) {
+        conflicts.push(conflictRecord(operation.path, operation.reason));
+      }
       return;
     }
     if (operation.reason === "remote-delete-local-modify") {
@@ -340,32 +372,14 @@ export class SyncEngine {
     changes: CommitChanges
   ): Promise<string> {
     const message = `[Constellation Sync] ${deviceName}\n\nConstellation-Sync-Run: ${runId}`;
-    const useGitData = changes.additions.some((addition) => addition.bytes.byteLength >= GRAPHQL_BATCH_BYTES);
+    const additionBytes = changes.additions.reduce((total, addition) => total + addition.bytes.byteLength, 0);
+    const useGitData =
+      additionBytes >= GRAPHQL_MAX_BYTES ||
+      changes.additions.length + changes.deletions.length > GRAPHQL_MAX_FILES;
     if (useGitData) {
       return this.github.createCommitWithGitData(binding.repository, binding.branch, expectedHeadOid, message, changes);
     }
-
-    const additions = [...changes.additions];
-    const deletions = [...changes.deletions];
-    let head = expectedHeadOid;
-    while (additions.length > 0 || deletions.length > 0) {
-      const batch: CommitChanges = { additions: [], deletions: [] };
-      let batchBytes = 0;
-      while (additions.length > 0 && batch.additions.length + batch.deletions.length < GRAPHQL_BATCH_FILES) {
-        const next = additions[0];
-        if (!next) break;
-        if (batch.additions.length > 0 && batchBytes + next.bytes.byteLength > GRAPHQL_BATCH_BYTES) break;
-        additions.shift();
-        batch.additions.push(next);
-        batchBytes += next.bytes.byteLength;
-      }
-      while (deletions.length > 0 && batch.additions.length + batch.deletions.length < GRAPHQL_BATCH_FILES) {
-        const path = deletions.shift();
-        if (path) batch.deletions.push(path);
-      }
-      head = await this.github.createCommitOnBranch(binding.repository, binding.branch, head, message, batch);
-    }
-    return head;
+    return this.github.createCommitOnBranch(binding.repository, binding.branch, expectedHeadOid, message, changes);
   }
 
   // Conflict copies are staged rather than written, so vault.exists cannot see
@@ -385,10 +399,95 @@ export class SyncEngine {
     reserved.add(candidate);
     return candidate;
   }
+
+  /**
+   * Applies the "keep the remote version" choice for a delete-vs-modify conflict:
+   * brings the current remote content back into the local vault.
+   *
+   * @throws When the remote file has meanwhile been removed from the branch.
+   */
+  async restoreRemoteFile(binding: RepositoryBinding, path: string): Promise<void> {
+    const remote = await this.remoteSnapshot(binding);
+    const entry = remote.manifest[path];
+    if (!entry) throw new Error(`The remote file no longer exists on the branch: ${path}`);
+    await this.vault.write(path, await this.verifiedBlob(binding, entry.oid));
+  }
+
+  /**
+   * Applies the "delete the remote version" choice for a delete-vs-modify conflict:
+   * removes the file from the branch (history retains it either way) and keeps
+   * the local deletion. Runs through the same strong-consistency head
+   * pre-check as the primary push path; a remote that already dropped the file
+   * is treated as the desired end state rather than an error.
+   */
+  async deleteRemoteFile(
+    binding: RepositoryBinding,
+    path: string,
+    deviceName: string
+  ): Promise<{ baseCommitOid: string; manifest: SnapshotManifest }> {
+    const head = await this.github.getBranchHeadForCommit(binding.repository, binding.branch);
+    let current = await this.remoteSnapshot(binding);
+    if (current.headOid !== head) current = await this.refreshedSnapshot(binding, head);
+    if (!current.manifest[path]) {
+      return {
+        baseCommitOid: current.headOid,
+        manifest: prepareManifest(current.manifest, this.vault.configDir()).manifest
+      };
+    }
+    let commitOid: string;
+    try {
+      commitOid = await this.github.createCommitOnBranch(
+        binding.repository,
+        binding.branch,
+        head,
+        `[Constellation Sync] ${deviceName}\n\nResolve delete conflict: ${path}`,
+        { additions: [], deletions: [path] }
+      );
+    } catch (error) {
+      if (!(error instanceof GitHubApiError)) throw error;
+      const latestHead = await this.github.getBranchHeadForCommit(binding.repository, binding.branch);
+      const latest = await this.refreshedSnapshot(binding, latestHead);
+      if (latest.manifest[path]) throw error;
+      this.remoteSnapshotCache = { repositoryId: binding.repository.id, branch: binding.branch, snapshot: latest };
+      return {
+        baseCommitOid: latest.headOid,
+        manifest: prepareManifest(latest.manifest, this.vault.configDir()).manifest
+      };
+    }
+    const refreshed = await this.refreshedSnapshot(binding, commitOid);
+    return {
+      baseCommitOid: refreshed.headOid,
+      manifest: prepareManifest(refreshed.manifest, this.vault.configDir()).manifest
+    };
+  }
 }
 
-function filterManifest(manifest: SnapshotManifest, configDir: string, configSelection: ReadonlySet<string>): SnapshotManifest {
-  return Object.fromEntries(Object.entries(manifest).filter(([path]) => shouldSyncPath(path, configDir, configSelection)));
+function prepareManifest(
+  manifest: SnapshotManifest,
+  configDir: string
+): { manifest: SnapshotManifest; blockedPaths: string[] } {
+  const candidates: SnapshotManifest = {};
+  const blockedPaths = new Set<string>();
+  for (const [path, entry] of Object.entries(manifest)) {
+    try {
+      if (!shouldSyncPath(path, configDir)) continue;
+      if (validatePortablePath(path).length > 0) {
+        blockedPaths.add(path);
+        continue;
+      }
+      candidates[path] = entry;
+    } catch {
+      blockedPaths.add(path);
+    }
+  }
+  for (const paths of findPortableCollisions(Object.keys(candidates)).values()) {
+    for (const path of paths) blockedPaths.add(path);
+  }
+  return { manifest: omitPaths(candidates, blockedPaths), blockedPaths: [...blockedPaths].sort() };
+}
+
+function omitPaths(manifest: SnapshotManifest, blockedPaths: ReadonlySet<string>): SnapshotManifest {
+  return Object.fromEntries(Object.entries(manifest).filter(([path]) => !blockedPaths.has(path)));
 }
 
 function conflictRecord(path: string, reason: ConflictRecord["reason"], conflictPath?: string): ConflictRecord {

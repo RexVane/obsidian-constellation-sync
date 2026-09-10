@@ -1,5 +1,4 @@
 import type {
-  ConfigFileInfo,
   LocaleSetting,
   PluginSettings,
   RemoteVaultSummary,
@@ -34,8 +33,7 @@ export interface DashboardController {
   approvePendingSync(): Promise<void>;
   cancelPendingSync(): Promise<void>;
   resolveConflict(id: string): Promise<void>;
-  scanConfigFiles(): Promise<ConfigFileInfo[]>;
-  updateSyncedConfigPaths(paths: string[]): Promise<void>;
+  resolveDeleteConflict(id: string, action: "restore-remote" | "delete-remote"): Promise<void>;
   updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs" | "localDebounceMs">(
     key: K,
     value: K extends "autoSync" | "paused"

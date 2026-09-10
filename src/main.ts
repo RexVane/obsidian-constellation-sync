@@ -7,7 +7,6 @@ import { SyncChangedDuringRunError, SyncEngine, SyncReviewRequiredError } from "
 import { ObsidianVaultStore } from "./sync/vault-store";
 import {
   SCHEMA_VERSION,
-  type ConfigFileInfo,
   type LocaleSetting,
   type PluginSettings,
   type RemoteVaultSummary,
@@ -24,7 +23,7 @@ import { ConstellationSettingTab } from "./ui/settings-tab";
 const STORAGE_REFRESH_MS = 10 * 60_000;
 
 export default class ConstellationSyncPlugin extends Plugin implements DashboardController {
-  override settings: PluginSettings = createDefaultSettings();
+  settings: PluginSettings = createDefaultSettings();
   private status: RuntimeStatus = { kind: "unconfigured", message: "Not configured" };
   private auth!: GitHubAuth;
   private github!: GitHubClient;
@@ -51,7 +50,6 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     this.auth = new GitHubAuth(secretStore);
     this.github = new GitHubClient(this.auth);
     this.vaultStore = new ObsidianVaultStore(this.app);
-    this.vaultStore.setSyncedConfigPaths(this.settings.syncedConfigPaths);
     this.engine = new SyncEngine(this.github, this.vaultStore);
 
     this.registerView(DASHBOARD_VIEW_TYPE, (leaf) => new ConstellationDashboardView(leaf, this));
@@ -97,8 +95,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
         ...this.settings,
         activity: this.settings.activity.slice(),
         conflicts: this.settings.conflicts.slice(),
-        skippedFiles: this.settings.skippedFiles.slice(),
-        syncedConfigPaths: this.settings.syncedConfigPaths.slice()
+        skippedFiles: this.settings.skippedFiles.slice()
       },
       status: { ...this.status },
       repositories: [...this.repositories],
@@ -136,7 +133,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     } catch (error) {
       // A token that failed verification must never linger in storage.
       this.auth.signOut();
-      this.handleError(error);
+      await this.handleError(error);
       throw error;
     }
   }
@@ -159,7 +156,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       }
       this.setStatus("idle", `Found ${this.repositories.length} repositories`);
     } catch (error) {
-      this.handleError(error);
+      await this.handleError(error);
       throw error;
     }
   }
@@ -179,7 +176,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       this.remoteVaults = await this.github.discoverVaults(repository);
       this.setStatus("idle", `Found ${this.remoteVaults.length} vault branches`);
     } catch (error) {
-      this.handleError(error);
+      await this.handleError(error);
       throw error;
     }
   }
@@ -269,20 +266,23 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
 
 
       };
-      await this.github.createVaultOnDefaultBranch(repository, metadata);
-      vaultId = metadata.vaultId;
-
-
-      // The metadata check and the marker commit are not atomic. If another
-      // device claimed the branch in between, follow the winner's identity.
-      const committed = await this.github.getVaultMetadata(repository, branch);
-      if (committed && committed.vaultId !== metadata.vaultId) {
-        this.addActivity("warning", `Another device bound ${branch} at the same time; following its vault identity`);
-        vaultId = committed.vaultId;
-
-
-      } else {
+      try {
+        await this.github.createVaultOnDefaultBranch(repository, metadata);
+        vaultId = metadata.vaultId;
         this.addActivity("bind", `Using ${branch} as the vault`);
+      } catch (error) {
+        if (!isStaleHeadError(error)) throw error;
+        // The marker check and commit are not atomic. If another device won the
+        // expected-head race, wait briefly for the REST content view and follow
+        // the identity it committed instead of leaving this device unbound.
+        let committed: VaultMetadata | null = null;
+        for (let attempt = 0; attempt < 4 && !committed; attempt += 1) {
+          if (attempt > 0) await sleep(400 * 2 ** (attempt - 1));
+          committed = await this.github.getVaultMetadata(repository, branch);
+        }
+        if (!committed) throw error;
+        vaultId = committed.vaultId;
+        this.addActivity("warning", `Another device bound ${branch} at the same time; following its vault identity`);
       }
     }
     this.settings.binding = { repository, vaultId, branch, boundAt: now };
@@ -349,7 +349,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     } catch (error) {
       this.addActivity("warning", `Branch is ${next}; metadata repair will retry automatically`);
       await this.saveSettings();
-      this.handleError(error);
+      await this.handleError(error);
       throw error;
     }
   }
@@ -372,7 +372,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     if (!pending) return;
     try {
       const binding = await this.reconcileBinding();
-      const fresh = await this.engine.createPlan(binding, this.settings.baseManifest);
+      const fresh = await this.engine.createPlan(binding, this.settings.baseManifest, this.pendingDeleteConflictPaths());
       if (fresh.id !== pending.id) {
         if (fresh.operations.length === 0 && fresh.largeFileWarnings.length === 0 && !fresh.deletionGuardTriggered) {
           // A previous attempt may have committed successfully before the final
@@ -402,7 +402,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
         await this.recoverPendingSyncAfterRemoteChange();
         return;
       }
-      this.handleError(error);
+      await this.handleError(error);
       throw error;
     }
   }
@@ -418,6 +418,10 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
   }
 
   async resolveConflict(id: string): Promise<void> {
+    return this.enqueueOperation(() => this.resolveConflictInternal(id));
+  }
+
+  private async resolveConflictInternal(id: string): Promise<void> {
     const conflict = this.settings.conflicts.find((item) => item.id === id);
     if (!conflict) return;
     conflict.resolved = true;
@@ -425,38 +429,42 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     this.setStatus(this.settings.conflicts.some((item) => !item.resolved) ? "conflict" : "idle", "Conflict status updated");
   }
 
-  async updateSyncedConfigPaths(paths: string[]): Promise<void> {
-    return this.enqueueOperation(async () => {
-      this.settings.syncedConfigPaths = [...new Set(paths)];
-      this.vaultStore.setSyncedConfigPaths(this.settings.syncedConfigPaths);
-      await this.saveSettings();
-      this.scheduleLocalSync();
-    });
+  async resolveDeleteConflict(id: string, action: "restore-remote" | "delete-remote"): Promise<void> {
+    return this.enqueueOperation(() => this.resolveDeleteConflictInternal(id, action));
   }
 
-  async scanConfigFiles(): Promise<ConfigFileInfo[]> {
-    const configDir = this.app.vault.configDir;
-    const selected = new Set(this.settings.syncedConfigPaths);
-    const rows: ConfigFileInfo[] = [];
-    const push = (path: string, isDir: boolean, disabled: boolean): void => {
-      rows.push({ path, isDir, disabled, selected: !disabled && selected.has(path) });
-    };
+  private async resolveDeleteConflictInternal(id: string, action: "restore-remote" | "delete-remote"): Promise<void> {
+    const conflict = this.settings.conflicts.find((item) => item.id === id);
+    if (!conflict || conflict.resolved || conflict.reason !== "local-delete-remote-modify") return;
+    const binding = await this.reconcileBinding();
+    if (action === "restore-remote") {
+      await this.engine.restoreRemoteFile(binding, conflict.path);
+      this.addActivity("restore", `Restored remote version of ${conflict.path}`);
+    } else {
+      const resolution = await this.engine.deleteRemoteFile(binding, conflict.path, this.settings.deviceName);
+      binding.baseCommitOid = resolution.baseCommitOid;
+      this.settings.baseManifest = resolution.manifest;
+      this.addActivity("sync", `Deleted remote ${conflict.path} (delete conflict resolved)`, resolution.baseCommitOid);
+    }
+    conflict.resolution = action;
+    conflict.resolved = true;
+    await this.saveSettings();
+    this.setStatus(this.settings.conflicts.some((item) => !item.resolved) ? "conflict" : "idle", "Conflict resolution applied");
+    // A restore writes the remote version locally; a delete leaves both sides
+    // without the file. Either way, a follow-up quiet check keeps every side
+    // consistent from here on.
+    this.scheduleLocalSync();
+  }
 
-    const listing = await this.app.vault.adapter.list(configDir);
-    for (const filePath of listing.files) {
-      const relative = filePath.slice(configDir.length + 1);
-      // Workspace layout, plugin files and graph.json are always excluded, so
-      // they stay out of the picker entirely.
-      if (!/^workspace.*\.json$/i.test(relative) && relative !== "community-plugins.json" && relative !== "graph.json") {
-        push(relative, false, false);
-      }
-    }
-    for (const folderPath of listing.folders) {
-      const relative = `${folderPath.slice(configDir.length + 1)}/`;
-      if (relative === "cache/" || relative === "plugins/") continue;
-      push(relative, true, false);
-    }
-    return rows.sort((left, right) => left.path.localeCompare(right.path));
+  /** Paths whose delete-vs-modify conflict is still unresolved: a sync must never
+   * turn those into silent remote deletions until the user picks a side.
+   */
+  private pendingDeleteConflictPaths(): ReadonlySet<string> {
+    return new Set(
+      this.settings.conflicts
+        .filter((item) => !item.resolved && item.reason === "local-delete-remote-modify")
+        .map((item) => item.path)
+    );
   }
 
   async updatePreference<K extends "autoSync" | "paused" | "deviceName" | "locale" | "remotePollMs" | "localDebounceMs">(
@@ -542,7 +550,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       else await this.refreshRepositories();
       this.maybeRefreshStorageUsage();
     } catch (error) {
-      this.handleError(error);
+      await this.handleError(error);
     }
   }
 
@@ -567,7 +575,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     const pending = this.settings.pendingReview?.plan;
     if (!pending) return;
     const binding = await this.reconcileBinding();
-    const fresh = await this.engine.createPlan(binding, this.settings.baseManifest);
+    const fresh = await this.engine.createPlan(binding, this.settings.baseManifest, this.pendingDeleteConflictPaths());
     if (fresh.operations.length === 0 && fresh.largeFileWarnings.length === 0 && !fresh.deletionGuardTriggered) {
       await this.executePlan(binding, fresh, {
         planId: fresh.id,
@@ -596,7 +604,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     try {
       if (!quiet) this.setStatus("scanning", "Comparing local and remote files…");
       const binding = await this.reconcileBinding();
-      const plan = await this.engine.createPlan(binding, this.settings.baseManifest);
+      const plan = await this.engine.createPlan(binding, this.settings.baseManifest, this.pendingDeleteConflictPaths());
       // Skipped files are reported, never a gate: a single unportable name used
       // to hold the entire vault hostage with no way to proceed.
       const reviewRequired =
@@ -627,7 +635,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
         this.setStatus("needs-review", error.message);
         return;
       }
-      this.handleError(error);
+      await this.handleError(error);
       throw error;
     }
   }
@@ -639,7 +647,8 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     quiet = false
   ): Promise<void> {
     if (!quiet) this.setStatus("syncing", "Synchronizing files…");
-    const execution = await this.engine.execute(binding, plan, approval, this.settings.deviceName);
+    const execution = await this.engine.execute(binding, plan, approval, this.settings.deviceName, this.pendingDeleteConflictPaths());
+    const baseMoved = binding.baseCommitOid !== execution.baseCommitOid;
     binding.baseCommitOid = execution.baseCommitOid;
     this.settings.baseManifest = execution.manifest;
     this.reportSkippedFiles(plan.blockedFiles);
@@ -656,13 +665,10 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
         await this.saveSettings();
         this.setStatus(unresolved ? "conflict" : "idle", message);
       } else {
-        const baseMoved = Boolean(
-          this.settings.binding && execution.baseCommitOid !== this.settings.binding.baseCommitOid
-        );
-        const shouldClearError = this.status.kind === "error";
+        const shouldClearError = ["error", "offline", "rate-limited"].includes(this.status.kind);
         if (baseMoved || shouldClearError) {
           // Persist a corrected base commit once so a lagging replica from a
-          // previous run cannot keep misclassifying remote config changes as
+          // previous run cannot keep misclassifying remote content changes as
           // conflicts, and let a quiet check clear a stale error status.
           await this.saveSettings();
           if (shouldClearError) {
@@ -701,15 +707,19 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     } catch (error) {
       if (!(error instanceof GitHubApiError) || error.status !== 404) throw error;
       const found = await this.github.findVaultById(binding.repository, binding.vaultId);
-      if (!found) throw new Error("The vault branch was renamed or deleted and its stable vaultId could not be found.");
+      if (!found) {
+        throw new Error("The vault branch was renamed or deleted and its stable vaultId could not be found.", { cause: error });
+      }
       branch = found.branch.name;
       const normalized = slugifyEnglishName(branch);
       if (validateBranchName(normalized, binding.repository.defaultBranch)) {
-        throw new Error(`The externally renamed branch ${branch} cannot be repaired automatically.`);
+        throw new Error(`The externally renamed branch ${branch} cannot be repaired automatically.`, { cause: error });
       }
       if (normalized !== branch) {
         const branches = await this.github.listBranches(binding.repository);
-        if (branches.some((item) => item.name === normalized)) throw new Error(`Cannot normalize ${branch}; ${normalized} already exists.`);
+        if (branches.some((item) => item.name === normalized)) {
+          throw new Error(`Cannot normalize ${branch}; ${normalized} already exists.`, { cause: error });
+        }
         const renamed = await this.github.renameBranch(binding.repository, branch, normalized);
         branch = normalized;
         binding.baseCommitOid = renamed.headOid;
@@ -731,9 +741,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     await this.saveSettings();
     return binding;
   }
-
-
-   /**
+  /**
    * Rewrites the shared vault marker. GitHub can report a stale head right after
    * a write, so a rejected commit is re-read and replayed rather than surfaced.
    */
@@ -762,7 +770,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       new Notice(`Constellation Sync: ${binding.repository.fullName}/${binding.branch} verified.`);
       this.setStatus("idle", "Repository binding verified");
     } catch (error) {
-      this.handleError(error);
+      await this.handleError(error);
       new Notice(`Constellation Sync: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -859,7 +867,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
     this.emit();
   }
 
-  private handleError(error: unknown): void {
+  private async handleError(error: unknown): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     let kind: RuntimeStatus["kind"] = "error";
     let code = "unknown";
@@ -878,7 +886,7 @@ export default class ConstellationSyncPlugin extends Plugin implements Dashboard
       delete this.settings.account;
     }
     this.addActivity("error", `${code}: ${message}`);
-    void this.saveSettings();
+    await this.saveSettings();
     this.setStatus(kind, message, code);
   }
 

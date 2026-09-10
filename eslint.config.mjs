@@ -3,10 +3,14 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["main.js", "node_modules/**", "coverage/**", "*.mjs"] },
+  { ignores: ["main.js", "node_modules/**", "coverage/**"] },
   eslint.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
+  ...tseslint.configs.recommendedTypeChecked.map((config) => ({
+    ...config,
+    files: ["**/*.{ts,tsx}"]
+  })),
   {
+    files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -14,15 +18,18 @@ export default tseslint.config(
       },
       globals: {
         ...globals.browser,
-        ...globals.node,
-        __GITHUB_CLIENT_ID__: "readonly",
-        __GITHUB_APP_SLUG__: "readonly",
-        __GITHUB_INSTALL_URL__: "readonly"
+        ...globals.node
       }
     },
     rules: {
       "@typescript-eslint/no-misused-promises": ["error", { "checksVoidReturn": false }],
       "@typescript-eslint/consistent-type-imports": "error"
+    }
+  },
+  {
+    files: ["**/*.mjs"],
+    languageOptions: {
+      globals: globals.node
     }
   }
 );
